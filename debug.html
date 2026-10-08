@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8"><title>viewer debug</title>
+<style>body{margin:0;font:13px monospace;background:#123;color:#fff}#v{position:absolute;inset:0 0 40% 0}#log{position:absolute;bottom:0;left:0;right:0;height:40%;overflow:auto;white-space:pre-wrap;padding:8px;background:#000}</style></head>
+<body><div id="v"></div><div id="log"></div>
+<script type="module">
+const out=document.getElementById('log');const log=(...a)=>{out.textContent+=a.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' ')+'\n';console.log(...a)};
+window.addEventListener('error',e=>log('window error',e.message));window.addEventListener('unhandledrejection',e=>log('unhandled',String(e.reason)));
+import { CONFIG } from './js/config.js';
+import { randomLocation } from './js/locations.js';
+try{
+ log('finding location…');const loc=await randomLocation();log('location',loc);
+ const css=document.createElement('link');css.rel='stylesheet';css.href='https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.css';document.head.appendChild(css);
+ await new Promise((r,j)=>{const s=document.createElement('script');s.src='https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.js';s.onload=r;s.onerror=()=>j(new Error('script load failed'));document.head.appendChild(s)});
+ log('mapillary loaded', typeof window.mapillary, Object.keys(window.mapillary||{}).slice(0,8));
+ log('webgl', !!document.createElement('canvas').getContext('webgl'));
+ const v=new mapillary.Viewer({accessToken:CONFIG.MAPILLARY_TOKEN,container:'v',imageId:loc.image_id,component:{cover:false}});
+ for(const ev of ['load','image','dataloading','navigable','position']) v.on(ev,e=>log('event',ev, ev==='image'?(e.image&&e.image.id):(e.loading??e.navigable??'')));
+ log('viewer constructed');
+ setTimeout(async()=>{try{log('isNavigable',v.isNavigable);const im=await v.getImage().catch(e=>'getImage err '+e.message);log('getImage',im&&im.id||im)}catch(e){log('later err',e.message)}},8000);
+ const r=await fetch(`https://graph.mapillary.com/${loc.image_id}?access_token=${encodeURIComponent(CONFIG.MAPILLARY_TOKEN)}&fields=id,thumb_1024_url,is_pano`);log('graph image lookup',r.status,(await r.text()).slice(0,300));
+}catch(e){log('ERROR',e.message,e.stack)}
+</script></body></html>

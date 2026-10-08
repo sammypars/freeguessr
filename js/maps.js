@@ -1,8 +1,8 @@
 // Leaflet maps: the small guess map and the results maps.
 /* global L */
 
-const TILE_URL = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
-const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 const PLAYER_COLORS = ["#F2B33D", "#4FB0D8", "#B98BE6", "#5FC48C", "#F08AA8", "#E8A06A", "#8FA6F2", "#C9D46A"];
 export const colorFor = (i) => PLAYER_COLORS[i % PLAYER_COLORS.length];
@@ -18,7 +18,7 @@ function baseMap(el, opts = {}) {
     preferCanvas: true,
     ...opts,
   }).setView([22, 8], 1);
-  L.tileLayer(TILE_URL, { attribution: TILE_ATTR, subdomains: "abcd", maxZoom: 19, detectRetina: true }).addTo(map);
+  L.tileLayer(TILE_URL, { attribution: TILE_ATTR, maxZoom: 19 }).addTo(map);
   L.control.zoom({ position: "topleft" }).addTo(map);
   map.attributionControl.setPrefix(false);
   return map;
