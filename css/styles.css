@@ -350,8 +350,14 @@ form > .hint { margin-top: 0.3rem; }
 .px-arrow svg { width: 42px; height: 42px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
 .px-arrow:hover, .px-arrow:focus-visible, .px-arrow.ahead { background: rgba(242, 179, 61, 0.92); color: var(--flag-ink); }
 .px-arrows.busy .px-arrow { opacity: 0.45; pointer-events: none; }
-.layer-psv { cursor: grab; }
-.layer-psv:active { cursor: grabbing; }
+.layer-psv, .layer-psv .psv-container { cursor: grab; }
+.layer-psv.can-walk, .layer-psv.can-walk .psv-container, .layer-flat.can-walk img { cursor: pointer; }
+.layer-psv:active, .layer-psv:active .psv-container { cursor: grabbing; }
+.px-arrow.target { background: rgba(242, 179, 61, 0.92); color: var(--flag-ink); outline: 3px solid #fff; outline-offset: 2px; }
+.px-noway { position: absolute; z-index: 7; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; border: 3px solid rgba(255,255,255,.85); pointer-events: none; animation: noway .65s ease-out forwards; }
+.px-noway::before, .px-noway::after { content: ""; position: absolute; left: 50%; top: 50%; width: 22px; height: 3px; margin: -1.5px 0 0 -11px; background: rgba(255,255,255,.85); transform: rotate(45deg); }
+.px-noway::after { transform: rotate(-45deg); }
+@keyframes noway { from { opacity: 1; transform: scale(.7); } to { opacity: 0; transform: scale(1.15); } }
 .px-credit { position: absolute; z-index: 6; left: 50%; bottom: 4px; transform: translateX(-50%); font-size: 11px; color: rgba(241, 246, 244, 0.75); text-shadow: 0 1px 2px rgba(0,0,0,.8); white-space: nowrap; }
 .px-credit a { color: inherit; }
 .game-screen:not([data-view="play"]) .px-arrows { display: none; }

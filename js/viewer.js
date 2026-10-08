@@ -244,11 +244,19 @@ async function showPanoramax(id, token, { heading = null } = {}) {
         },
       });
       psv.addEventListener("position-updated", scheduleArrows);
+      // Click anywhere to walk that way (a drag to look around isn't a click).
       psv.addEventListener("click", ({ data }) => {
-        // Clicking the road (below the horizon) walks toward that spot.
-        if (!allowMoveNow || data.rightclick || data.pitch > -0.12 || !pxCurrent?.pano) return;
-        walkToward(norm360(pxCurrent.az + data.yaw / RAD), 50);
+        if (!allowMoveNow || data.rightclick || !pxCurrent?.pano) return;
+        clickWalk(norm360(pxCurrent.az + data.yaw / RAD), data.clientX, data.clientY);
       });
+      // While hovering, show which way a click would take you.
+      layers.psv.addEventListener("pointermove", (e) => {
+        if (e.buttons || !pxCurrent?.pano || !psv) return;
+        const r = layers.psv.getBoundingClientRect();
+        const { yaw } = psv.dataHelper.viewerCoordsToSphericalCoords({ x: e.clientX - r.left, y: e.clientY - r.top });
+        hoverHeading(norm360(pxCurrent.az + yaw / RAD), layers.psv);
+      });
+      layers.psv.addEventListener("pointerleave", () => hoverHeading(null, layers.psv));
     }
     const pos = step
       ? { position: { yaw: (heading - next.az) * RAD, pitch: psv.getPosition().pitch }, zoom: psv.getZoomLevel() }
@@ -279,6 +287,7 @@ async function showPanoramax(id, token, { heading = null } = {}) {
     pxCurrent = next;
   }
   pxMoves = [];
+  hovered = null;
   renderArrows();
   findMoves(token);
 }
@@ -327,18 +336,47 @@ async function findMoves(token) {
   }
 }
 
-// Walk toward a compass heading (relative=true: relative to where you face).
+// Walk toward a compass heading (relative to where you face).
 function walk(relative) {
   walkToward(norm360(viewHeading() + relative), 70);
 }
-function walkToward(heading, tolerance) {
-  if (!pxMoves.length) return;
+// The move closest to a compass heading, within `tolerance` degrees.
+function pickMove(heading, tolerance) {
   let best = null;
   for (const m of pxMoves) {
     const d = angleDiff(m.bearing, heading);
     if (d <= tolerance && (!best || d < best.d || (d === best.d && m.dist < best.m.dist))) best = { m, d };
   }
-  if (best) stepTo(best.m.id);
+  return best?.m || null;
+}
+function walkToward(heading, tolerance) {
+  const m = pickMove(heading, tolerance);
+  if (m) stepTo(m.id);
+  return m;
+}
+
+// Clicking the photo: walk toward the clicked direction if there's a path
+// within 80° of it; otherwise show a brief "can't go that way" mark.
+const CLICK_TOLERANCE = 80;
+function clickWalk(heading, x, y) {
+  if (!allowMoveNow || moving || !inPlay()) return;
+  if (walkToward(heading, CLICK_TOLERANCE)) return;
+  const mark = document.createElement("div");
+  mark.className = "px-noway";
+  const r = root.getBoundingClientRect();
+  mark.style.left = `${x - r.left}px`;
+  mark.style.top = `${y - r.top}px`;
+  root.appendChild(mark);
+  setTimeout(() => mark.remove(), 650);
+}
+
+let hovered = null;
+function hoverHeading(heading, el) {
+  const m = heading === null || !allowMoveNow || moving ? null : pickMove(heading, CLICK_TOLERANCE);
+  el.classList.toggle("can-walk", Boolean(m));
+  if ((m?.id || null) === hovered) return;
+  hovered = m?.id || null;
+  for (const b of layers.arrows.querySelectorAll(".px-arrow")) b.classList.toggle("target", b.dataset.id === hovered);
 }
 
 async function stepTo(id, { heading = viewHeading() } = {}) {
@@ -378,6 +416,7 @@ function renderArrows() {
       </button>`).join("");
   }
   for (const b of ring.querySelectorAll(".px-arrow")) {
+    b.classList.toggle("target", b.dataset.id === hovered);
     const m = pxMoves.find((x) => x.id === b.dataset.id);
     const rel = ((m.bearing - h + 540) % 360) - 180; // -180..180, 0 = straight ahead
     b.style.transform = `translate(-50%, -50%) rotate(${rel}deg) translateY(-104px)`;
@@ -399,8 +438,22 @@ function setupFlatZoom(el) {
   }, { passive: false });
   el.addEventListener("pointerdown", (e) => { if (s > 1) { drag = { px: e.clientX - x, py: e.clientY - y }; el.setPointerCapture(e.pointerId); } });
   el.addEventListener("pointermove", (e) => { if (drag) { x = e.clientX - drag.px; y = e.clientY - drag.py; apply(); } });
-  el.addEventListener("pointerup", () => { drag = null; });
-  el.addEventListener("dblclick", () => { s = s > 1 ? 1 : 2.5; if (s === 1) { x = 0; y = 0; } apply(); });
+  let downAt = null;
+  el.addEventListener("pointerdown", (e) => { downAt = { x: e.clientX, y: e.clientY }; });
+  el.addEventListener("pointerup", (e) => {
+    drag = null;
+    // A click (not a pan) walks in the clicked direction; a flat photo
+    // covers roughly 60° of view, centred on the camera heading.
+    if (!downAt || Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 6 || !pxCurrent || pxCurrent.pano) return;
+    const r = el.getBoundingClientRect();
+    clickWalk(norm360(pxCurrent.az + ((e.clientX - r.left) / r.width - 0.5) * 60), e.clientX, e.clientY);
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (e.buttons || !pxCurrent || pxCurrent.pano) return;
+    const r = el.getBoundingClientRect();
+    hoverHeading(norm360(pxCurrent.az + ((e.clientX - r.left) / r.width - 0.5) * 60), el);
+  });
+  el.addEventListener("wheel", () => {}, { passive: true });
 }
 const resetFlatZoom = (el) => el._reset?.();
 
