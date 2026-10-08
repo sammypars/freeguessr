@@ -3,9 +3,9 @@
 // See README.md for where to find each one.
 export const CONFIG = {
   // Supabase → Project Settings → API → Project URL
-  SUPABASE_URL: "",
+  SUPABASE_URL: "https://ytpntumuvbwghhpcucah.supabase.co",
   // Supabase → Project Settings → API → "anon" / publishable key
-  SUPABASE_ANON_KEY: "",
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl0cG50dW11dmJ3Z2hocGN1Y2FoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE0NzAzNTAsImV4cCI6MjEwNzA0NjM1MH0.RdK-nocg8kkQrpd05cR3SPzTKNl4TC3s_A-dlrDIK8c",
   // mapillary.com/dashboard/developers → your app → "Client Token" (starts with MLY|)
   MAPILLARY_TOKEN: "",
 
