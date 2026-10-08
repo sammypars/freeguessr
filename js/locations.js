@@ -130,7 +130,7 @@ async function tryPanoramax(bbox, panoOnly, signal) {
   if (!list.length) return null;
   const pick = pickOne(list);
   const [lng, lat] = pick.geometry.coordinates;
-  return { image_id: `px-${pick.id}`, lat, lng };
+  return { image_id: `px-${pick.id}`, lat, lng, preload: pick.assets.sd.href };
 }
 
 // ---------------------------------------------------------------- shared
@@ -188,9 +188,13 @@ let mlyReachable = null;
 export function mapillaryReachable() {
   if (mlyReachable) return mlyReachable;
   mlyReachable = (async () => {
+    // On a normal connection this whole check takes well under a second.
+    // Blocking networks tend to hang rather than fail, so give up after 3s.
+    const ctrl = new AbortController();
+    const giveUp = setTimeout(() => ctrl.abort(), 3000);
     try {
       const url = `${MLY_API}?access_token=${encodeURIComponent(CONFIG.MAPILLARY_TOKEN)}&fields=thumb_256_url&bbox=2.34,48.85,2.36,48.86&limit=1`;
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: ctrl.signal });
       const thumb = res.ok ? (await res.json()).data?.[0]?.thumb_256_url : null;
       if (!thumb) return false;
       return await new Promise((resolve) => {
@@ -204,6 +208,8 @@ export function mapillaryReachable() {
       });
     } catch {
       return false;
+    } finally {
+      clearTimeout(giveUp);
     }
   })();
   return mlyReachable;
@@ -225,7 +231,14 @@ export async function randomLocation(source) {
 // Keeps one location ready in the background so the next round starts instantly.
 let pending = null;
 export function prefetchLocation() {
-  if (!pending) pending = randomLocation().catch(() => null);
+  if (pending) return;
+  pending = randomLocation()
+    .then((loc) => {
+      // Warm the browser cache with the photo so the next round opens instantly.
+      if (loc?.preload) fetch(loc.preload, { mode: "cors" }).catch(() => {});
+      return loc;
+    })
+    .catch(() => null);
 }
 export async function nextLocation() {
   const p = pending;
