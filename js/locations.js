@@ -1,10 +1,17 @@
-// Picks random street-level imagery from Mapillary.
+// Picks random street-level imagery.
 //
-// Strategy: choose a random seed point (towns and cities spread around the
-// world, weighted toward places Mapillary covers well), jitter it so rounds
-// don't always land downtown, then ask Mapillary for 360° images inside a
-// small box around that point. Several boxes are tried in parallel so a round
-// is usually ready in well under a second.
+// Two free sources:
+//  - Mapillary: the most places, but its photos live on Facebook's servers
+//    (fbcdn.net), which school and office networks often block.
+//  - Panoramax: open 360° imagery hosted by OpenStreetMap groups. Thinner
+//    coverage (strongest in France and the rest of Europe), but it loads on
+//    networks that block Facebook.
+// "Automatic" uses Mapillary when this browser can load its photos and
+// Panoramax when it can't. Image ids from Panoramax are stored as "px-<uuid>".
+//
+// Strategy: choose a random area (weighted toward places each source covers
+// well), ask the source for 360° images inside it, and pick one. Several areas
+// are tried in parallel so a round is usually ready in about a second.
 import { CONFIG } from "./config.js";
 
 // [lat, lng, jitter in degrees]
@@ -61,19 +68,22 @@ const SEEDS = [
   [-43.53,172.64,.25],[-45.87,170.5,.2],[-37.79,175.28,.2],[-17.73,168.32,.1],[-18.14,178.44,.1],
 ];
 
-const API = "https://graph.mapillary.com/images";
+const MLY_API = "https://graph.mapillary.com/images";
+const PX_API = "https://api.panoramax.xyz/api/search";
 const rand = (a, b) => a + Math.random() * (b - a);
+const pickOne = (list) => list[Math.floor(Math.random() * list.length)];
 
-function candidateBox() {
-  const [lat0, lng0, j] = SEEDS[Math.floor(Math.random() * SEEDS.length)];
+// ---------------------------------------------------------------- Mapillary
+function mapillaryBox() {
+  const [lat0, lng0, j] = pickOne(SEEDS);
   const lat = lat0 + rand(-j, j);
   const lng = lng0 + rand(-j, j) / Math.max(0.3, Math.cos((lat * Math.PI) / 180));
   const h = 0.02; // ~2 km box: small enough for Mapillary to answer quickly
   return [lng - h, lat - h, lng + h, lat + h].map((v) => +v.toFixed(5));
 }
 
-async function tryBox(bbox, panoOnly, signal) {
-  const url = new URL(API);
+async function tryMapillary(bbox, panoOnly, signal) {
+  const url = new URL(MLY_API);
   url.searchParams.set("access_token", CONFIG.MAPILLARY_TOKEN);
   url.searchParams.set("fields", "id,computed_geometry,geometry,is_pano");
   url.searchParams.set("bbox", bbox.join(","));
@@ -85,20 +95,46 @@ async function tryBox(bbox, panoOnly, signal) {
   const json = await res.json();
   const list = (json.data || []).filter((d) => (d.computed_geometry || d.geometry)?.coordinates);
   if (!list.length) return null;
-  const pick = list[Math.floor(Math.random() * list.length)];
+  const pick = pickOne(list);
   const [lng, lat] = (pick.computed_geometry || pick.geometry).coordinates;
   return { image_id: String(pick.id), lat, lng };
 }
 
-// Resolves with { image_id, lat, lng }.
-export async function randomLocation() {
+// ---------------------------------------------------------------- Panoramax
+// Areas to search, as [minLng, minLat, maxLng, maxLat]. France and its
+// neighbours get a fine grid (that's where most Panoramax imagery is); every
+// city seed above adds a wider box so the rest of the world still turns up.
+const PX_AREAS = (() => {
+  const areas = [];
+  for (let lng = -5; lng < 9; lng += 1.5) for (let lat = 42; lat < 51.5; lat += 1.2) areas.push([lng, lat, lng + 1.5, lat + 1.2]);
+  for (let lng = -10; lng < 30; lng += 3) for (let lat = 36; lat < 60; lat += 2.5) areas.push([lng, lat, lng + 3, lat + 2.5]);
+  for (const [lat, lng] of SEEDS) areas.push([lng - 1.5, lat - 1.2, lng + 1.5, lat + 1.2]);
+  return areas.map((a) => a.map((v) => +v.toFixed(3)));
+})();
+
+async function tryPanoramax(bbox, panoOnly, signal) {
+  const url = new URL(PX_API);
+  url.searchParams.set("bbox", bbox.join(","));
+  url.searchParams.set("limit", "60");
+  if (panoOnly) url.searchParams.set("filter", "field_of_view=360");
+  const res = await fetch(url, { signal });
+  if (!res.ok) return null;
+  const json = await res.json();
+  const list = (json.features || []).filter((f) => f.geometry?.coordinates && f.assets?.sd?.href);
+  if (!list.length) return null;
+  const pick = pickOne(list);
+  const [lng, lat] = pick.geometry.coordinates;
+  return { image_id: `px-${pick.id}`, lat, lng };
+}
+
+// ---------------------------------------------------------------- shared
+async function search(tryFn, boxFn, { waves = 6, perWave = 4, panoWaves = 4 } = {}) {
   const ctrl = new AbortController();
   try {
-    // Up to 6 waves of 4 parallel lookups; 360° only for the first 4 waves.
-    for (let wave = 0; wave < 6; wave++) {
-      const panoOnly = wave < 4;
-      const attempts = Array.from({ length: 4 }, () =>
-        tryBox(candidateBox(), panoOnly, ctrl.signal).catch((e) => {
+    for (let wave = 0; wave < waves; wave++) {
+      const panoOnly = wave < panoWaves;
+      const attempts = Array.from({ length: perWave }, () =>
+        tryFn(boxFn(), panoOnly, ctrl.signal).catch((e) => {
           if (e.fatal) throw e;
           return null;
         }),
@@ -123,6 +159,59 @@ function firstHit(promises) {
       }, reject);
     }
   });
+}
+
+// ---------------------------------------------------------------- source choice
+const SETTING_KEY = "freeguessr.imagery";
+export const SOURCES = {
+  auto: "Automatic",
+  mapillary: "Mapillary (most places)",
+  panoramax: "Panoramax (works on school networks)",
+};
+export function getSourceSetting() {
+  try { const v = localStorage.getItem(SETTING_KEY); return SOURCES[v] ? v : "auto"; } catch { return "auto"; }
+}
+export function setSourceSetting(v) {
+  try { localStorage.setItem(SETTING_KEY, v); } catch { /* private mode */ }
+  pending = null;
+}
+
+// Can this browser load Mapillary's photos? Checked once per page load by
+// fetching one small photo.
+let mlyReachable = null;
+export function mapillaryReachable() {
+  if (mlyReachable) return mlyReachable;
+  mlyReachable = (async () => {
+    try {
+      const url = `${MLY_API}?access_token=${encodeURIComponent(CONFIG.MAPILLARY_TOKEN)}&fields=thumb_256_url&bbox=2.34,48.85,2.36,48.86&limit=1`;
+      const res = await fetch(url);
+      const thumb = res.ok ? (await res.json()).data?.[0]?.thumb_256_url : null;
+      if (!thumb) return false;
+      return await new Promise((resolve) => {
+        const img = new Image();
+        const t = setTimeout(() => resolve(false), 8000);
+        img.onload = () => { clearTimeout(t); resolve(true); };
+        img.onerror = () => { clearTimeout(t); resolve(false); };
+        img.src = thumb;
+      });
+    } catch {
+      return false;
+    }
+  })();
+  return mlyReachable;
+}
+
+export async function chosenSource() {
+  const s = getSourceSetting();
+  if (s !== "auto") return s;
+  return (await mapillaryReachable()) ? "mapillary" : "panoramax";
+}
+
+// Resolves with { image_id, lat, lng }.
+export async function randomLocation(source) {
+  source = source || (await chosenSource());
+  if (source === "panoramax") return search(tryPanoramax, () => pickOne(PX_AREAS), { waves: 6, perWave: 6, panoWaves: 5 });
+  return search(tryMapillary, mapillaryBox);
 }
 
 // Keeps one location ready in the background so the next round starts instantly.

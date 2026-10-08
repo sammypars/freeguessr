@@ -6,7 +6,7 @@ import { api } from "./api.js";
 import { $, $$, esc, el, fmtScore, fmtDistance, fmtClock, toast, setBusy, copyText, friendlyError, openModal, closeModal } from "./ui.js";
 import { showPano, backToStart, resizeViewer, preloadViewer, destroyViewer } from "./viewer.js";
 import { createGuessMap, createResultMap, colorFor } from "./maps.js";
-import { nextLocation, prefetchLocation } from "./locations.js";
+import { nextLocation, prefetchLocation, SOURCES, getSourceSetting, setSourceSetting } from "./locations.js";
 
 const MAX_HEALTH = 6000;
 const MODE_NAME = { solo: "Solo", party: "Party room", duel: "Duel", daily: "Daily challenge" };
@@ -277,6 +277,8 @@ export function mountGame(root, gameId, { me, goHome }) {
         ${game.mode === "duel" ? "" : `<label>Rounds<select id="set-rounds">${ROUND_OPTIONS.map((r) => `<option value="${r}" ${r === game.total_rounds ? "selected" : ""}>${r}</option>`).join("")}</select></label>`}
         <label>Time per round<select id="set-time">${(game.mode === "duel" ? DUEL_TIME_OPTIONS : TIME_OPTIONS).map(([s, l]) => `<option value="${s}" ${s === game.time_limit ? "selected" : ""}>${l}</option>`).join("")}</select></label>
         <label>Movement<select id="set-move"><option value="move" ${game.move_mode === "move" ? "selected" : ""}>Moving allowed</option><option value="nomove" ${game.move_mode === "nomove" ? "selected" : ""}>No moving</option></select></label>
+        <label>Street photos<select id="set-source">${Object.entries(SOURCES).map(([v, l]) => `<option value="${v}" ${v === getSourceSetting() ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+        <p class="hint">Playing on a school network? Pick Panoramax so everyone's photos load.</p>
       </div>` : `<p class="settings-ro" id="settings-ro">${esc(settingsSummary())}</p>`;
 
     showOverlay(`
@@ -325,7 +327,8 @@ export function mountGame(root, gameId, { me, goHome }) {
           queueRefresh();
         } catch (e) { toast(friendlyError(e), "error"); }
       };
-      $$("select", overlay).forEach((s) => s.addEventListener("change", save));
+      $$("select:not(#set-source)", overlay).forEach((s) => s.addEventListener("change", save));
+      $("#set-source", overlay).addEventListener("change", (e) => { setSourceSetting(e.target.value); prefetchLocation(); });
       $("#start", overlay).onclick = (e) => startRound(1, e.currentTarget);
     }
   }

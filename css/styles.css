@@ -334,6 +334,20 @@ form > .hint { margin-top: 0.3rem; }
 .final-standings li.me { color: var(--flag); }
 .final-standings .dot { display: none; }
 
+/* Street viewer layers */
+.pano-layer { position: absolute; inset: 0; }
+.layer-flat { display: grid; place-items: center; overflow: hidden; background: #0a1a26; touch-action: none; }
+.layer-flat img { max-width: 100%; max-height: 100%; object-fit: contain; transform-origin: center; user-select: none; cursor: grab; }
+.px-nav { position: absolute; z-index: 6; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; gap: 10px; }
+.px-step { width: 52px; height: 52px; border-radius: 50%; border: none; background: var(--panel); color: var(--text); display: grid; place-items: center; cursor: pointer; box-shadow: var(--shadow); }
+.px-step svg { width: 24px; height: 24px; }
+.px-step:hover:not(:disabled) { background: var(--ink-3); }
+.px-step:disabled { opacity: 0.35; cursor: default; }
+.px-credit { position: absolute; z-index: 6; left: 50%; bottom: 4px; transform: translateX(-50%); font-size: 11px; color: rgba(241, 246, 244, 0.75); text-shadow: 0 1px 2px rgba(0,0,0,.8); white-space: nowrap; }
+.px-credit a { color: inherit; }
+.game-screen:not([data-view="play"]) .px-nav { display: none; }
+@media (max-width: 720px) { .px-nav { bottom: 96px; } }
+
 /* Mapillary chrome tweaks */
 .mapillary-viewer, .mapillary-js { background: var(--ink) !important; }
 

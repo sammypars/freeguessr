@@ -1,6 +1,7 @@
 // App shell: accounts, routing, home and daily screens.
 import { CONFIG, isConfigured } from "./config.js";
 import { $, $$, esc, el, fmtScore, toast, openModal, closeModal, setBusy, friendlyError } from "./ui.js";
+import { SOURCES, getSourceSetting, setSourceSetting, randomLocation } from "./locations.js";
 
 const app = $("#app");
 let api = null, USERNAME_RE = null;
@@ -230,6 +231,7 @@ function openSoloSettings() {
       <label>Rounds<select name="rounds">${[3, 5, 7, 10].map((r) => `<option ${r === 5 ? "selected" : ""}>${r}</option>`).join("")}</select></label>
       <label>Time per round<select name="time"><option value="0" selected>No limit</option><option value="30">30 seconds</option><option value="60">1 minute</option><option value="120">2 minutes</option></select></label>
       <label>Movement<select name="move"><option value="move">Moving allowed</option><option value="nomove">No moving</option></select></label>
+      <label>Street photos<select name="source">${Object.entries(SOURCES).map(([v, l]) => `<option value="${v}" ${v === getSourceSetting() ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <button class="btn btn-flag btn-block" type="submit">Start game</button>
     </form>`);
   const form = $("#solo-form", modal);
@@ -237,6 +239,7 @@ function openSoloSettings() {
     e.preventDefault();
     const b = $("button[type=submit]", form);
     setBusy(b, true, "Starting…");
+    setSourceSetting(form.source.value);
     try {
       const id = await api.rpc("create_game", {
         p_mode: "solo", p_rounds: +form.rounds.value, p_time_limit: +form.time.value, p_move_mode: form.move.value,
@@ -300,8 +303,8 @@ async function playDaily(btn, st) {
   try {
     if (!st.seeded) {
       setBusy(btn, true, "Choosing today's places…");
-      const { randomLocation } = await import("./locations.js");
-      const locs = await Promise.all(Array.from({ length: 5 }, () => randomLocation()));
+      // Panoramax for the daily: it loads on every network, so everyone can play.
+      const locs = await Promise.all(Array.from({ length: 5 }, () => randomLocation("panoramax")));
       await api.rpc("seed_daily", { p_locations: locs });
     }
     setBusy(btn, true, "Starting…");

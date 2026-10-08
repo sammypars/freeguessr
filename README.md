@@ -15,7 +15,7 @@ Players create an account with a username and password.
 
 - Static site (plain HTML/CSS/JS, no build step), hosted free on **GitHub Pages**.
 - **Supabase** (free tier) for accounts, the database and realtime updates. All game rules — scoring, timers, duel damage, who can start rounds — run inside the database (`supabase/schema.sql`), so players can't edit their own scores. The true location of a round stays hidden until the round ends.
-- **Mapillary** (free) for street-level 360° imagery, **Leaflet** + OpenStreetMap/CARTO tiles for the maps.
+- Street photos from two free sources: **Mapillary** (most places) and **Panoramax** (open 360° imagery hosted by OpenStreetMap groups). **Leaflet** + OpenStreetMap tiles for the maps.
 
 ## Setup (about 15 minutes, one time)
 
@@ -46,7 +46,9 @@ Any static server works, e.g. `python3 -m http.server 8000` in this folder, then
 ## Good to know
 
 - The host's browser picks each round's location from Mapillary, so a determined player could dig the coordinates out of their browser's network tab. It's built for playing with friends, not for prize money.
-- Mapillary coverage is crowd-sourced: it's dense in Europe and North America and patchier elsewhere. The location picker favours places with good 360° coverage and falls back to flat photos if it can't find one quickly.
+- **Street photos setting** (solo setup and the room lobby): *Automatic* uses Mapillary when your browser can load its photos and Panoramax when it can't. Mapillary's photos come from Facebook's servers, which many school and office networks block; Panoramax loads there. In a room, the host's setting decides, so on a school network pick **Panoramax** so everyone's photos load.
+- Panoramax coverage is thinner than Mapillary's and strongest in France and the rest of Europe, so Panoramax games lean European. The daily challenge always uses Panoramax so it works on every network.
+- Both sources are crowd-sourced. The location picker favours 360° photos and falls back to flat photos if it can't find one quickly.
 - Supabase pauses free projects after a week with no activity; open the dashboard and click **Restore** if the game stops loading after a long break.
 
 ## Files
