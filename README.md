@@ -1,0 +1,64 @@
+# FreeGuessr
+
+A free, multiplayer take on GeoGuessr. You're dropped on a real street somewhere in the world; look around, put a pin on the map, and score up to 5,000 points depending on how close you are.
+
+**Modes**
+
+- **Solo**: 3–10 rounds, optional timer, moving or no-moving.
+- **Party room**: up to 16 players guess the same places live. Share a 6-letter code or invite link. Host picks rounds, timer and movement.
+- **Duel**: 1v1, 6,000 health each. Whoever is farther from the flag loses health equal to the score gap. Damage multiplies from round 5 onward. After the first guess, the other player has 15 seconds.
+- **Daily challenge**: the same five places for everyone each UTC day, one attempt, with a leaderboard.
+
+Players create an account with a username and password.
+
+## How it's built
+
+- Static site (plain HTML/CSS/JS, no build step), hosted free on **GitHub Pages**.
+- **Supabase** (free tier) for accounts, the database and realtime updates. All game rules — scoring, timers, duel damage, who can start rounds — run inside the database (`supabase/schema.sql`), so players can't edit their own scores. The true location of a round stays hidden until the round ends.
+- **Mapillary** (free) for street-level 360° imagery, **Leaflet** + OpenStreetMap/CARTO tiles for the maps.
+
+## Setup (about 15 minutes, one time)
+
+### 1. Supabase
+
+1. Create a free project at [supabase.com](https://supabase.com).
+2. Open **SQL Editor → New query**, paste the whole of [`supabase/schema.sql`](supabase/schema.sql), and click **Run**. It should finish with "Success. No rows returned".
+3. Go to **Authentication → Sign In / Providers → Email** and turn **off** "Confirm email". (Players sign in with a username, so there's no inbox to confirm.)
+4. Go to **Project Settings → API** and copy the **Project URL** and the **anon / publishable key**.
+
+### 2. Mapillary
+
+1. Sign up at [mapillary.com](https://www.mapillary.com) and open the [developer dashboard](https://www.mapillary.com/dashboard/developers).
+2. **Register application** (any name; tick "Read" access), then copy the **Client Token** — it starts with `MLY|`.
+
+### 3. Add the keys
+
+Edit [`js/config.js`](js/config.js) and fill in `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `MAPILLARY_TOKEN`. All three are designed to be public, so committing them is fine. Leave `AUTH_EMAIL_DOMAIN` alone once people have accounts — changing it breaks existing logins.
+
+### 4. Publish
+
+On GitHub: **Settings → Pages → Build and deployment → Deploy from a branch → `main` / `(root)` → Save**. After a minute the game is live at `https://sammypars.github.io/freeguessr/`.
+
+## Running locally
+
+Any static server works, e.g. `python3 -m http.server 8000` in this folder, then open http://localhost:8000.
+
+## Good to know
+
+- The host's browser picks each round's location from Mapillary, so a determined player could dig the coordinates out of their browser's network tab. It's built for playing with friends, not for prize money.
+- Mapillary coverage is crowd-sourced: it's dense in Europe and North America and patchier elsewhere. The location picker favours places with good 360° coverage and falls back to flat photos if it can't find one quickly.
+- Supabase pauses free projects after a week with no activity; open the dashboard and click **Restore** if the game stops loading after a long break.
+
+## Files
+
+| Path | What it does |
+| --- | --- |
+| `index.html` | Page shell |
+| `css/styles.css` | All styling |
+| `js/app.js` | Accounts, routing, home and daily screens |
+| `js/game.js` | Lobby, rounds, results and final standings |
+| `js/api.js` | Supabase calls and realtime subscriptions |
+| `js/locations.js` | Random Mapillary location picker |
+| `js/viewer.js` | Street-level viewer |
+| `js/maps.js` | Guess map and results maps |
+| `supabase/schema.sql` | Database tables, security rules and game logic |
