@@ -367,9 +367,16 @@ export function mountGame(root, gameId, { me, goHome }) {
     try {
       await showPano($("#pano", root), round.image_id, { allowMove: game.move_mode === "move" });
     } catch (e) {
-      toast(friendlyError(e), "error", 6000);
+      if (destroyed || viewKey !== `play:${n}`) return;
+      // Keep the message on screen (the guess map still works on top of it).
+      $(".spinner", veil)?.setAttribute("hidden", "");
+      $("#veil-text", root).textContent = friendlyError(e);
+      veil.classList.add("veil-error");
+      return;
     }
     if (destroyed || viewKey !== `play:${n}`) return;
+    $(".spinner", veil)?.removeAttribute("hidden");
+    veil.classList.remove("veil-error");
     veil.hidden = true;
     resizeViewer();
     guessMap.invalidate();

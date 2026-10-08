@@ -37,8 +37,34 @@ function setMovement(allowMove) {
   }
 }
 
+// Mapillary's photos are served from Facebook's image servers (fbcdn.net),
+// which many school and office networks block. Check one small photo first
+// so players get a clear explanation instead of an endless spinner.
+const BLOCKED_MSG = "Street photos can't load on this network. They come from Facebook's image servers (fbcdn.net), which this network blocks. Try another Wi-Fi or a phone hotspot.";
+let photosReachable = null; // null = unknown, true/false once checked
+
+async function checkPhotos(imageId) {
+  if (photosReachable !== null) return photosReachable;
+  try {
+    const r = await fetch(`https://graph.mapillary.com/${encodeURIComponent(imageId)}?fields=thumb_256_url&access_token=${encodeURIComponent(CONFIG.MAPILLARY_TOKEN)}`);
+    const url = r.ok ? (await r.json()).thumb_256_url : null;
+    if (!url) return true; // can't tell; let the viewer try
+    photosReachable = await new Promise((resolve) => {
+      const img = new Image();
+      const t = setTimeout(() => resolve(false), 10000);
+      img.onload = () => { clearTimeout(t); resolve(true); };
+      img.onerror = () => { clearTimeout(t); resolve(false); };
+      img.src = url;
+    });
+  } catch {
+    return true;
+  }
+  return photosReachable;
+}
+
 export async function showPano(container, imageId, { allowMove = true } = {}) {
-  const mapillary = await loadLib();
+  const [mapillary, reachable] = await Promise.all([loadLib(), checkPhotos(imageId)]);
+  if (!reachable) throw new Error(BLOCKED_MSG);
   startImageId = imageId;
   if (!viewer || viewer.getContainer() !== container) {
     viewer?.remove();
