@@ -101,6 +101,8 @@ export function copyText(text) {
 export function friendlyError(err) {
   const msg = String(err?.message || err || "Something went wrong");
   if (/Invalid login credentials/i.test(msg)) return "That username and password don't match.";
+  if (/Email not confirmed/i.test(msg)) return 'This account is waiting for email confirmation. Turn off "Confirm email" in Supabase and confirm the account (see README).';
+  if (/signups? (are|is) disabled/i.test(msg)) return 'Sign-ups are switched off in Supabase. Turn on "Allow new users to sign up" and the Email provider.';
   if (/already registered|already been registered/i.test(msg)) return "That username is taken.";
   if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) return "Can't reach the server. Check your connection and try again.";
   if (/Password should be at least/i.test(msg)) return msg;
