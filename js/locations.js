@@ -126,7 +126,11 @@ async function tryPanoramax(bbox, panoOnly, signal) {
   const res = await fetch(url, { signal });
   if (!res.ok) return null;
   const json = await res.json();
-  const list = (json.features || []).filter((f) => f.geometry?.coordinates && f.assets?.sd?.href);
+  const usable = (json.features || []).filter((f) => f.geometry?.coordinates && f.assets?.sd?.href);
+  // Prefer photos that are part of a path (they have neighbours to walk to);
+  // one-off uploads are only used if nothing else turns up in this area.
+  const onPath = usable.filter((f) => f.links?.some((l) => l.rel === "next" || l.rel === "prev"));
+  const list = onPath.length ? onPath : panoOnly ? [] : usable;
   if (!list.length) return null;
   const pick = pickOne(list);
   const [lng, lat] = pick.geometry.coordinates;
