@@ -1,7 +1,7 @@
 // App shell: accounts, routing, home and daily screens.
 import { CONFIG, isConfigured } from "./config.js";
 import { $, $$, esc, el, fmtScore, toast, openModal, closeModal, setBusy, friendlyError } from "./ui.js";
-import { SOURCES, getSourceSetting, setSourceSetting, randomLocation } from "./locations.js";
+import { SOURCES, getSourceSetting, setSourceSetting, randomLocation, mapillaryReachable } from "./locations.js";
 
 const app = $("#app");
 let api = null, USERNAME_RE = null;
@@ -397,6 +397,9 @@ async function init() {
   });
   window.addEventListener("hashchange", route);
   route();
+  // Find out early whether this network can load Mapillary photos, so the
+  // first round doesn't wait on the check.
+  if (getSourceSetting() === "auto") setTimeout(() => mapillaryReachable(), 300);
 }
 
 init().catch((e) => {

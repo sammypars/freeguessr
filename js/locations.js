@@ -101,16 +101,22 @@ async function tryMapillary(bbox, panoOnly, signal) {
 }
 
 // ---------------------------------------------------------------- Panoramax
-// Areas to search, as [minLng, minLat, maxLng, maxLat]. France and its
-// neighbours get a fine grid (that's where most Panoramax imagery is); every
-// city seed above adds a wider box so the rest of the world still turns up.
+// Areas to search, as [minLng, minLat, maxLng, maxLat]: a box around every
+// city seed above (so rounds spread around the world), plus a coarse grid
+// over Europe, where Panoramax has the most countryside imagery. A random
+// sub-box inside each area keeps repeat visits from landing on the same street.
 const PX_AREAS = (() => {
   const areas = [];
-  for (let lng = -5; lng < 9; lng += 1.5) for (let lat = 42; lat < 51.5; lat += 1.2) areas.push([lng, lat, lng + 1.5, lat + 1.2]);
-  for (let lng = -10; lng < 30; lng += 3) for (let lat = 36; lat < 60; lat += 2.5) areas.push([lng, lat, lng + 3, lat + 2.5]);
   for (const [lat, lng] of SEEDS) areas.push([lng - 1.5, lat - 1.2, lng + 1.5, lat + 1.2]);
-  return areas.map((a) => a.map((v) => +v.toFixed(3)));
+  for (let lng = -10; lng < 30; lng += 5) for (let lat = 36; lat < 60; lat += 4) areas.push([lng, lat, lng + 5, lat + 4]);
+  return areas;
 })();
+function panoramaxBox() {
+  const [x0, y0, x1, y1] = pickOne(PX_AREAS);
+  const w = (x1 - x0) * 0.5, h = (y1 - y0) * 0.5;
+  const x = rand(x0, x1 - w), y = rand(y0, y1 - h);
+  return [x, y, x + w, y + h].map((v) => +v.toFixed(4));
+}
 
 async function tryPanoramax(bbox, panoOnly, signal) {
   const url = new URL(PX_API);
@@ -189,7 +195,9 @@ export function mapillaryReachable() {
       if (!thumb) return false;
       return await new Promise((resolve) => {
         const img = new Image();
-        const t = setTimeout(() => resolve(false), 8000);
+        // A 256px photo loads in well under a second on a normal connection;
+        // blocked networks tend to hang instead of failing, so don't wait long.
+        const t = setTimeout(() => resolve(false), 2500);
         img.onload = () => { clearTimeout(t); resolve(true); };
         img.onerror = () => { clearTimeout(t); resolve(false); };
         img.src = thumb;
@@ -210,7 +218,7 @@ export async function chosenSource() {
 // Resolves with { image_id, lat, lng }.
 export async function randomLocation(source) {
   source = source || (await chosenSource());
-  if (source === "panoramax") return search(tryPanoramax, () => pickOne(PX_AREAS), { waves: 6, perWave: 6, panoWaves: 5 });
+  if (source === "panoramax") return search(tryPanoramax, panoramaxBox, { waves: 6, perWave: 5, panoWaves: 5 });
   return search(tryMapillary, mapillaryBox);
 }
 
