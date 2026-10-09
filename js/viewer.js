@@ -145,13 +145,15 @@ async function showMapillary(imageId, token) {
 // photos around you load in advance so steps are near-instant.
 const PX_NEAR = (lng, lat, d, pano) =>
   `https://api.panoramax.xyz/api/search?bbox=${lng - d},${lat - d * 0.7},${lng + d},${lat + d * 0.7}&limit=50${pano ? "&filter=field_of_view%3D360" : ""}`;
-const STEP_FADE = { speed: 350, rotation: false, effect: "fade" };
+const STEP_FADE = { speed: 260, rotation: false, effect: "fade" };
 
 let psvLib = null;
 let psv = null;
 let pxCurrent = null;   // { id, item, lat, lng, az, pano }
 let pxMoves = [];       // [{ id, bearing, dist }]
 let moving = false;
+let hdCtrl = null;       // background high-res download for the current photo
+let hdSwapping = null;   // promise while the viewer swaps in the high-res photo
 let arrowFrame = 0;
 const pxItems = new Map();
 
@@ -253,11 +255,21 @@ async function showPanoramax(id, token, { heading = null, zoom = null } = {}) {
     pxCurrent = next;
     // Sharpen in the background once the quick version is up. Download first
     // and only swap if the player is still on this photo.
+    // The download is cancelled the moment you walk on, and the photo is handed
+    // to the viewer from memory so it's never fetched twice.
     if (hd && sd && bigScreen()) {
-      loadsImage(hd, 30000, true).then((ok) => {
-        if (!ok || token !== renderToken || !psv || moving) return;
-        psv.setPanorama(hd, { transition: false, showLoader: false, position: psv.getPosition(), zoom: psv.getZoomLevel() }).catch(() => {});
-      });
+      hdCtrl?.abort();
+      const ctrl = (hdCtrl = new AbortController());
+      fetch(hd, { mode: "cors", signal: ctrl.signal })
+        .then((r) => (r.ok ? r.blob() : null))
+        .then((blob) => {
+          if (!blob || token !== renderToken || !psv || moving) return;
+          const url = URL.createObjectURL(blob);
+          hdSwapping = psv.setPanorama(url, { transition: false, showLoader: false, position: psv.getPosition(), zoom: psv.getZoomLevel() })
+            .catch(() => {})
+            .finally(() => { hdSwapping = null; setTimeout(() => URL.revokeObjectURL(url), 2000); });
+        })
+        .catch(() => {});
     }
   } else {
     const img = layers.flat.querySelector("img");
@@ -441,6 +453,7 @@ function hoverHeading(heading, el, point = null) {
 async function stepTo(id, { heading = viewHeading() } = {}) {
   if (!allowMoveNow || moving || !inPlay()) return;
   moving = true;
+  hdCtrl?.abort(); // don't let a big background download hold up the step
   layers.arrows.classList.add("busy");
   hideTarget();
   const token = ++renderToken;
@@ -451,8 +464,9 @@ async function stepTo(id, { heading = viewHeading() } = {}) {
   const usingPsv = psv && !use2d && !layers.psv.hidden;
   const zoom = usingPsv ? psv.getZoomLevel() : null;
   try {
+    if (hdSwapping) await Promise.race([hdSwapping, sleepMs(1500)]);
     if (ahead && usingPsv) {
-      await Promise.race([psv.animate({ zoom: Math.min(100, zoom + 14), speed: 180 }), sleepMs(260)]).catch(() => {});
+      await Promise.race([psv.animate({ zoom: Math.min(100, zoom + 14), speed: 150 }), sleepMs(220)]).catch(() => {});
     } else if (ahead && !layers.p2d.hidden) {
       layers.p2d.classList.add("lunge");
     }
