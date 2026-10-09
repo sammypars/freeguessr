@@ -6,9 +6,10 @@
 // Each backend is created once and reused every round, so switching rounds
 // never re-initialises WebGL.
 import { CONFIG } from "./config.js";
+import { loadCss } from "./load.js";
 
 const PX_ITEM = (id) => `https://api.panoramax.xyz/api/search?ids=${encodeURIComponent(id)}`;
-const PSV_CSS = "vendor/psv/core.css";
+const VENDOR = (path) => new URL(`../vendor/${path}`, import.meta.url).href;
 
 let root = null;          // the #pano element the layers live in
 let layers = null;        // { mly, psv, flat, arrows, credit }
@@ -64,10 +65,10 @@ function loadMapillary() {
   mlyLib = new Promise((resolve, reject) => {
     const css = document.createElement("link");
     css.rel = "stylesheet";
-    css.href = "vendor/mapillary/mapillary.css";
+    css.href = VENDOR("mapillary/mapillary.css");
     document.head.appendChild(css);
     const s = document.createElement("script");
-    s.src = "vendor/mapillary/mapillary.js";
+    s.src = VENDOR("mapillary/mapillary.js");
     s.async = true;
     s.onload = () => resolve(window.mapillary);
     s.onerror = () => { mlyLib = null; reject(new Error("Couldn't load the street viewer. Reload the page; if it keeps happening, open the check page (#/check).")); };
@@ -153,11 +154,8 @@ const pxItems = new Map();
 
 function loadPsv() {
   if (psvLib) return psvLib;
-  const css = document.createElement("link");
-  css.rel = "stylesheet";
-  css.href = PSV_CSS;
-  document.head.appendChild(css);
-  psvLib = import("@photo-sphere-viewer/core").catch(() => {
+  loadCss(VENDOR("psv/core.css"));
+  psvLib = import(VENDOR("psv/core.module.js")).catch(() => {
     psvLib = null;
     throw new Error("Couldn't load the 360° viewer.");
   });

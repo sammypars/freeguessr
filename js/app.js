@@ -2,6 +2,15 @@
 import { CONFIG, isConfigured } from "./config.js";
 import { $, $$, esc, el, fmtScore, toast, openModal, closeModal, setBusy, friendlyError } from "./ui.js";
 import { SOURCES, getSourceSetting, setSourceSetting, randomLocation, mapillaryReachable } from "./locations.js";
+import { loadScript, loadCss } from "./load.js";
+
+// Leaflet (the maps) normally comes from index.html; load it here if a cached
+// older page didn't.
+async function ensureLeaflet() {
+  if (window.L) return;
+  loadCss(new URL("../vendor/leaflet/leaflet.css", import.meta.url).href);
+  await loadScript(new URL("../vendor/leaflet/leaflet.js", import.meta.url), "Couldn't load the maps. Reload the page.");
+}
 
 const app = $("#app");
 let api = null, USERNAME_RE = null;
@@ -412,8 +421,14 @@ async function renderCheck() {
   };
 
   const tests = {
-    browser: async () => (HTMLScriptElement.supports?.("importmap") ? [true] : [false]),
-    libs: async () => (window.L && window.supabase ? [true] : [false]),
+    browser: async () => [typeof structuredClone === "function" && typeof AbortController === "function"],
+    libs: async () => {
+      try {
+        await ensureLeaflet();
+        if (!window.supabase) await loadScript(new URL("../vendor/supabase.js", import.meta.url));
+      } catch { /* reported below */ }
+      return [Boolean(window.L && window.supabase)];
+    },
     server: async () => {
       const r = await withTimeout(fetch(`${CONFIG.SUPABASE_URL}/auth/v1/settings`, { headers: { apikey: CONFIG.SUPABASE_ANON_KEY } }));
       return [r.ok];
@@ -422,7 +437,7 @@ async function renderCheck() {
     webgl: async () => {
       let ok = false;
       try { const c = document.createElement("canvas"); ok = Boolean(c.getContext("webgl2") || c.getContext("webgl")); } catch { /* no */ }
-      if (ok) { try { await withTimeout(import("@photo-sphere-viewer/core")); } catch { return [false, "3D graphics work, but the 360° viewer code didn't load. 360° photos will show as a flat strip."]; } }
+      if (ok) { try { await withTimeout(import(new URL("../vendor/psv/core.module.js", import.meta.url).href)); } catch { return [false, "3D graphics work, but the 360° viewer code didn't load. 360° photos will show as a flat strip."]; } }
       return [ok];
     },
     pxapi: async () => {
@@ -497,6 +512,7 @@ async function init() {
   // The check page must work even when the rest of the game can't start.
   if (location.hash.startsWith("#/check")) return renderCheck();
   if (!isConfigured()) return renderSetup();
+  await ensureLeaflet();
   ({ api, USERNAME_RE } = await import("./api.js"));
   session = await api.session();
   await loadProfile();

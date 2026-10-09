@@ -504,7 +504,7 @@ function isObject(obj) {
 }
 
 // src/utils/psv.ts
-import { MathUtils } from "three";
+import { MathUtils } from "../three/three.module.min.js";
 
 // src/PSVError.ts
 var PSVError = class _PSVError extends Error {
@@ -843,7 +843,7 @@ function mergePanoData(width, height, newPanoData, xmpPanoData) {
 }
 
 // src/utils/three-utils.ts
-import { LinearFilter, LinearMipmapLinearFilter, Quaternion, Texture } from "three";
+import { LinearFilter, LinearMipmapLinearFilter, Quaternion, Texture } from "../three/three.module.min.js";
 
 // src/data/system.ts
 var LOCALSTORAGE_TOUCH_SUPPORT = `${VIEWER_DATA}_touchSupport`;
@@ -1098,7 +1098,7 @@ var Animation = class {
 };
 
 // src/utils/Dynamic.ts
-import { MathUtils as MathUtils2 } from "three";
+import { MathUtils as MathUtils2 } from "../three/three.module.min.js";
 var Dynamic = class {
   constructor(fn, config) {
     this.fn = fn;
@@ -1368,7 +1368,7 @@ var PressHandler = class {
 };
 
 // src/utils/Slider.ts
-import { MathUtils as MathUtils3 } from "three";
+import { MathUtils as MathUtils3 } from "../three/three.module.min.js";
 var SliderDirection = /* @__PURE__ */ ((SliderDirection2) => {
   SliderDirection2["VERTICAL"] = "VERTICAL";
   SliderDirection2["HORIZONTAL"] = "HORIZONTAL";
@@ -1937,10 +1937,10 @@ function adapterInterop(adapter) {
 }
 
 // src/adapters/DualFisheyeAdapter.ts
-import { Mesh as Mesh2, MeshBasicMaterial as MeshBasicMaterial2, SphereGeometry as SphereGeometry2 } from "three";
+import { Mesh as Mesh2, MeshBasicMaterial as MeshBasicMaterial2, SphereGeometry as SphereGeometry2 } from "../three/three.module.min.js";
 
 // src/adapters/EquirectangularAdapter.ts
-import { MathUtils as MathUtils4, Mesh, MeshBasicMaterial, ShaderMaterial, SphereGeometry, Vector2 } from "three";
+import { MathUtils as MathUtils4, Mesh, MeshBasicMaterial, ShaderMaterial, SphereGeometry, Vector2 } from "../three/three.module.min.js";
 
 // src/adapters/shaders/equirectangular.fragment.glsl
 var equirectangular_fragment_default = "varying vec3 vLocalPos;\nvarying vec3 vLocalCam;\nuniform sampler2D map;\nuniform float opacity;\nuniform vec2 uvOffset;\nuniform vec2 uvScale;\nuniform float radius;\n\nconst float PI = 3.1415926535897932384626433832795;\n\n// Analytic edge antialiasing across one screen-space pixel at the\n// cropped-region boundary on a single axis (replaces the MSAA the standard\n// adapter gets by rendering triangles).\nfloat edgeAlpha(float coord, float width) {\n    float dist = min(coord, 1.0 - coord);\n    return clamp(dist / width + 0.5, 0.0, 1.0);\n}\n\n// Screen-space derivative (fwidth) of a coordinate that wraps in [0, 1], such\n// as longitude at the antimeridian. A naive fwidth() spikes to ~1.0 across the\n// seam. Removing the integer jump keeps the result sub-pixel. Assumes the\n// per-pixel change stays well under 0.5, so only the wrap rounds to a non-zero\n// integer (safe unless a pixel spans ~180deg of longitude).\nfloat fwidthWrapped(float coord) {\n    float dx = dFdx(coord); dx -= floor(dx + 0.5);\n    float dy = dFdy(coord); dy -= floor(dy + 0.5);\n    return abs(dx) + abs(dy);\n}\n\nvoid main() {\n    // Ray-cast the true sphere from the camera through the (interpolated, on\n    // the polygon chord) position, and use the exit-point direction for\n    // sampling. This makes the result independent of mesh tessellation even\n    // when the camera is offset from the sphere center (e.g. fisheye config).\n    // Inputs are already in the panorama's local frame (see vertex shader), so\n    // the exit direction is too and needs no further rotation.\n    vec3 rayDir = vLocalPos - vLocalCam;\n    float a = dot(rayDir, rayDir);\n    float b = dot(vLocalCam, rayDir);\n    float c = dot(vLocalCam, vLocalCam) - radius * radius;\n    float t = (-b + sqrt(max(b * b - a * c, 0.0))) / a;\n    vec3 dir = (vLocalCam + t * rayDir) / radius;\n\n    float u = atan(-dir.x, dir.z) / (2.0 * PI) + 0.5;\n    float v = asin(clamp(dir.y, -1.0, 1.0)) / PI + 0.5;\n    vec2 uv = (vec2(u, v) - uvOffset) / uvScale;\n\n    float alpha = 1.0;\n    // `u` wraps at the antimeridian, so derive its width safely.\n    if (uvScale.x < 1.0) alpha = min(alpha, edgeAlpha(uv.x, fwidthWrapped(u) / uvScale.x));\n    if (uvScale.y < 1.0) alpha = min(alpha, edgeAlpha(uv.y, fwidth(uv.y)));\n    if (alpha <= 0.0) discard;\n\n    gl_FragColor = texture2D(map, uv);\n    gl_FragColor.a *= opacity * alpha;\n}\n";
@@ -3034,7 +3034,7 @@ ZoomRangeButton.id = "zoomRange";
 ZoomRangeButton.groupId = "zoom";
 
 // src/data/config.ts
-import { MathUtils as MathUtils5 } from "three";
+import { MathUtils as MathUtils5 } from "../three/three.module.min.js";
 
 // src/plugins/AbstractPlugin.ts
 var AbstractPlugin = class extends TypedEventTarget {
@@ -3549,7 +3549,7 @@ var Navbar = class extends AbstractComponent {
 };
 
 // src/data/cache.ts
-import { Cache as ThreeCache } from "three";
+import { Cache as ThreeCache } from "../three/three.module.min.js";
 ThreeCache.enabled = false;
 var Cache = {
   enabled: true,
@@ -3599,7 +3599,7 @@ var Cache = {
 };
 
 // src/components/Loader.ts
-import { MathUtils as MathUtils6 } from "three";
+import { MathUtils as MathUtils6 } from "../three/three.module.min.js";
 var Loader = class extends AbstractComponent {
   /**
    * @internal
@@ -4388,7 +4388,7 @@ var Tooltip = class extends AbstractComponent {
 var error_default = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="15 15 70 70"><path fill="currentColor" d="M50,16.2c-18.6,0-33.8,15.1-33.8,33.8S31.4,83.7,50,83.7S83.8,68.6,83.8,50S68.6,16.2,50,16.2z M50,80.2c-16.7,0-30.2-13.6-30.2-30.2S33.3,19.7,50,19.7S80.3,33.3,80.3,50S66.7,80.2,50,80.2z"/><rect fill="currentColor" x="48" y="31.7" width="4" height="28"/><rect fill="currentColor" x="48" y="63.2" width="4" height="5"/><!--Created by Shastry from the Noun Project--></svg>\n';
 
 // src/services/DataHelper.ts
-import { Euler as Euler2, MathUtils as MathUtils7, Vector3 as Vector32 } from "three";
+import { Euler as Euler2, MathUtils as MathUtils7, Vector3 as Vector32 } from "../three/three.module.min.js";
 
 // src/services/AbstractService.ts
 var AbstractService = class {
@@ -4673,7 +4673,7 @@ var DataHelper = class extends AbstractService {
 };
 
 // src/services/EventsHandler.ts
-import { MathUtils as MathUtils8 } from "three";
+import { MathUtils as MathUtils8 } from "../three/three.module.min.js";
 
 // src/icons/gesture.svg
 var gesture_default = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill="currentColor" d="M33.38 33.2a1.96 1.96 0 0 0 1.5-3.23 10.61 10.61 0 0 1 7.18-17.51c.7-.06 1.31-.49 1.61-1.12a13.02 13.02 0 0 1 11.74-7.43c7.14 0 12.96 5.8 12.96 12.9 0 3.07-1.1 6.05-3.1 8.38-.7.82-.61 2.05.21 2.76.83.7 2.07.6 2.78-.22a16.77 16.77 0 0 0 4.04-10.91C72.3 7.54 64.72 0 55.4 0a16.98 16.98 0 0 0-14.79 8.7 14.6 14.6 0 0 0-12.23 14.36c0 3.46 1.25 6.82 3.5 9.45.4.45.94.69 1.5.69m45.74 43.55a22.13 22.13 0 0 1-5.23 12.4c-4 4.55-9.53 6.86-16.42 6.86-12.6 0-20.1-10.8-20.17-10.91a1.82 1.82 0 0 0-.08-.1c-5.3-6.83-14.55-23.82-17.27-28.87-.05-.1 0-.21.02-.23a6.3 6.3 0 0 1 8.24 1.85l9.38 12.59a1.97 1.97 0 0 0 3.54-1.17V25.34a4 4 0 0 1 1.19-2.87 3.32 3.32 0 0 1 2.4-.95c1.88.05 3.4 1.82 3.4 3.94v24.32a1.96 1.96 0 0 0 3.93 0v-33.1a3.5 3.5 0 0 1 7 0v35.39a1.96 1.96 0 0 0 3.93 0v-.44c.05-2.05 1.6-3.7 3.49-3.7 1.93 0 3.5 1.7 3.5 3.82v5.63c0 .24.04.48.13.71l.1.26a1.97 1.97 0 0 0 3.76-.37c.33-1.78 1.77-3.07 3.43-3.07 1.9 0 3.45 1.67 3.5 3.74l-1.77 18.1zM77.39 51c-1.25 0-2.45.32-3.5.9v-.15c0-4.27-3.33-7.74-7.42-7.74-1.26 0-2.45.33-3.5.9V16.69a7.42 7.42 0 0 0-14.85 0v1.86a7 7 0 0 0-3.28-.94 7.21 7.21 0 0 0-5.26 2.07 7.92 7.92 0 0 0-2.38 5.67v37.9l-5.83-7.82a10.2 10.2 0 0 0-13.35-2.92 4.1 4.1 0 0 0-1.53 5.48C20 64.52 28.74 80.45 34.07 87.34c.72 1.04 9.02 12.59 23.4 12.59 7.96 0 14.66-2.84 19.38-8.2a26.06 26.06 0 0 0 6.18-14.6l1.78-18.2v-.2c0-4.26-3.32-7.73-7.42-7.73z"/><!--Created by AomAm from the Noun Project--></svg>\n';
@@ -5258,7 +5258,7 @@ import {
   Vector3 as Vector33,
   WebGLRenderTarget,
   WebGLRenderer
-} from "three";
+} from "../three/three.module.min.js";
 ColorManagement.enabled = false;
 var vector2 = new Vector22();
 var matrix4 = new Matrix4();
@@ -5650,10 +5650,10 @@ var Renderer = class extends AbstractService {
 };
 
 // src/services/TextureLoader.ts
-import { FileLoader } from "three";
+import { FileLoader } from "../three/three.module.min.js";
 
 // src/lib/ImageLoader.ts
-import { ImageLoader } from "three";
+import { ImageLoader } from "../three/three.module.min.js";
 var AbortableImageLoader = class extends ImageLoader {
   constructor() {
     super(...arguments);
@@ -5816,7 +5816,7 @@ var TextureLoader = class extends AbstractService {
 };
 
 // src/services/ViewerDynamics.ts
-import { MathUtils as MathUtils10 } from "three";
+import { MathUtils as MathUtils10 } from "../three/three.module.min.js";
 var ViewerDynamics = class extends AbstractService {
   /**
    * @internal
@@ -5889,7 +5889,7 @@ var ViewerDynamics = class extends AbstractService {
 };
 
 // src/services/ViewerState.ts
-import { Vector3 as Vector34 } from "three";
+import { Vector3 as Vector34 } from "../three/three.module.min.js";
 var ViewerState = class {
   /**
    * @internal

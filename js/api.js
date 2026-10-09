@@ -1,7 +1,14 @@
 // Everything that talks to Supabase lives here.
-// supabase-js is loaded from vendor/supabase.js (see index.html) as window.supabase.
-const createClient = (...args) => window.supabase.createClient(...args);
 import { CONFIG, isConfigured } from "./config.js";
+import { loadScript } from "./load.js";
+
+// supabase-js lives in vendor/ (hosted with the site, so web filters that
+// block code CDNs can't break it). index.html normally loads it; load it here
+// too in case a cached older page didn't.
+if (!window.supabase?.createClient && isConfigured()) {
+  await loadScript(new URL("../vendor/supabase.js", import.meta.url), "Couldn't load the game's server library. Reload the page.");
+}
+const createClient = (...args) => window.supabase.createClient(...args);
 
 const sb = isConfigured()
   ? createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY, {
