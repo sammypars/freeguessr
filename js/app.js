@@ -175,12 +175,17 @@ async function renderHome() {
         <div class="hero-copy">
           <h1>Where on Earth<br/>are you?</h1>
           <p class="lede">You're dropped on a real street somewhere in the world. Look around, read the signs, then put a pin on the map. The closer you are, the more points you get.</p>
+          ${profile ? `<dl class="me-strip">
+            <div><dt>Best 5-round game</dt><dd>${fmtScore(profile.best_score)}</dd></div>
+            <div><dt>Games finished</dt><dd>${fmtScore(profile.games_played)}</dd></div>
+            <div><dt>Duels won–lost</dt><dd>${fmtScore(profile.duel_wins)}–${fmtScore(profile.duel_losses)}</dd></div>
+          </dl>` : ""}
         </div>
         <div class="legend" role="list" aria-label="Ways to play">
           ${MODES.map((m) => `
             <div class="legend-row" role="listitem">
               <svg class="legend-sym sym-${m.id}" viewBox="0 0 32 32" aria-hidden="true">${m.sym}</svg>
-              <div class="legend-text"><h2>${m.name}</h2><p>${m.desc}</p></div>
+              <div class="legend-text"><h2>${m.name}</h2><p>${m.desc}</p>${m.id === "daily" ? `<p class="daily-leader" id="daily-leader" hidden></p>` : ""}</div>
               <button class="btn ${m.id === "solo" ? "btn-flag" : "btn-ghost"}" data-mode="${m.id}">${m.cta}</button>
             </div>`).join("")}
           <form class="join" id="join-form">
@@ -204,6 +209,12 @@ async function renderHome() {
     location.hash = `#/join/${code}`;
   });
   if (user()) renderActiveGames();
+  api.leaderboard().then((rows) => {
+    const el = $("#daily-leader", app);
+    if (!el || !rows?.length) return;
+    el.hidden = false;
+    el.innerHTML = `Leading today: <strong>${esc(rows[0].username)}</strong> with ${fmtScore(rows[0].score)}${rows.length > 1 ? ` · ${rows.length} players` : ""}`;
+  }).catch(() => {});
 }
 
 async function renderActiveGames() {

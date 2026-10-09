@@ -445,3 +445,80 @@ form > .hint { margin-top: 0.3rem; }
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
   .contours g { animation: none; }
 }
+
+/* =================================================================
+   Polish: compass, round intro, walking, results, final, home
+   ================================================================= */
+
+/* Compass */
+.compass { position: relative; width: 58px; border-radius: var(--r-md); background: var(--panel); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.compass-rose { position: absolute; inset: 7px; border-radius: 50%; border: 1.5px solid var(--line-strong); transition: transform .12s linear; }
+.compass-rose span { position: absolute; font: 800 10px/1 var(--display); color: var(--muted); left: 50%; top: 50%; }
+.compass-rose .c-n { color: var(--pin); font-size: 12px; transform: translate(-50%, -50%) translateY(-15px); }
+.compass-rose .c-e { transform: translate(-50%, -50%) translateX(15px); }
+.compass-rose .c-s { transform: translate(-50%, -50%) translateY(15px); }
+.compass-rose .c-w { transform: translate(-50%, -50%) translateX(-15px); }
+.compass-tick { position: absolute; left: 50%; top: 3px; width: 0; height: 0; margin-left: -4px; border: 4px solid transparent; border-top: 6px solid var(--flag); }
+@media (max-width: 720px) { .compass { width: 48px; } .compass-rose .c-n { transform: translate(-50%, -50%) translateY(-12px); } .compass-rose .c-e { transform: translate(-50%, -50%) translateX(12px); } .compass-rose .c-s { transform: translate(-50%, -50%) translateY(12px); } .compass-rose .c-w { transform: translate(-50%, -50%) translateX(-12px); } }
+
+/* Round intro card */
+.round-splash { position: absolute; z-index: 8; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
+.round-splash .splash-k { font: 700 1.1rem/1 var(--display); color: var(--muted); }
+.round-splash .splash-v { font: 800 clamp(5rem, 16vw, 9rem)/0.95 var(--display); letter-spacing: -0.05em; color: var(--text); }
+.round-splash .splash-v span { font-size: 0.32em; letter-spacing: 0; color: var(--muted); margin-left: 0.15em; }
+.round-splash .splash-sub { margin-top: 0.6rem; font-weight: 700; color: var(--flag); }
+.round-splash.in > * { animation: splash-in .45s cubic-bezier(.2,.8,.2,1) both; }
+.round-splash.in .splash-v { animation-delay: .05s; }
+.round-splash.in .splash-sub { animation-delay: .12s; }
+.round-splash.out { animation: splash-out .3s ease-in forwards; }
+@keyframes splash-in { from { opacity: 0; transform: translateY(18px) scale(.96); } }
+@keyframes splash-out { to { opacity: 0; transform: scale(1.04); } }
+
+/* Walking */
+.px-target { position: absolute; z-index: 6; left: 0; top: 0; width: 90px; height: 34px; pointer-events: none; }
+.px-target::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 3px solid rgba(255,255,255,.92); background: rgba(255,255,255,.18); box-shadow: 0 0 0 1px rgba(0,0,0,.3), 0 3px 12px rgba(0,0,0,.35); }
+.px-target::after { content: ""; position: absolute; left: 50%; top: 50%; width: 10px; height: 4px; margin: -2px 0 0 -5px; border-radius: 50%; background: #fff; }
+.layer-p2d.lunge { transition: transform .22s ease-in; transform: scale(1.07); }
+
+/* Guess map controls */
+
+.dock-pin {
+  position: absolute; z-index: 2; top: 8px; right: 8px; width: 34px; height: 34px; border-radius: 8px; border: none;
+  background: rgba(16, 41, 59, .82); color: var(--text); display: grid; place-items: center; cursor: pointer; opacity: 0; transition: opacity .15s;
+}
+.dock-pin svg { width: 18px; height: 18px; }
+.dock:hover .dock-pin, .dock.locked .dock-pin, .dock-pin:focus-visible { opacity: 1; }
+.dock.locked .dock-pin { background: var(--flag); color: var(--flag-ink); }
+.dock-guess kbd { font: 700 0.72rem/1 var(--body); padding: 3px 6px; margin-left: 6px; border-radius: 5px; background: rgba(36, 26, 4, .14); border: 1px solid rgba(36, 26, 4, .25); }
+@media (max-width: 720px) { .dock-pin, .dock-guess kbd { display: none; } }
+
+/* Results */
+.verdict { font: 800 1.15rem/1.2 var(--display); color: var(--text); margin-bottom: 0.25rem; }
+.big-score .count { font-variant-numeric: tabular-nums; }
+.big-score .unit { font-size: 1.1rem; color: var(--text); letter-spacing: 0; margin-left: 0.35rem; }
+.big-score span:not(.count):not(.unit) { font-size: 1.1rem; }
+.flag-drop svg { animation: flag-drop .45s cubic-bezier(.2,1.4,.4,1) both; transform-origin: 20% 100%; }
+@keyframes flag-drop { from { transform: translateY(-26px) scale(.6); opacity: 0; } }
+
+/* Final screen rounds */
+.round-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+.round-rows li { display: grid; grid-template-columns: 1.4rem 1fr 4rem; grid-template-rows: auto auto; column-gap: 0.75rem; align-items: center; }
+.rr-n { grid-row: span 2; font: 800 1rem/1 var(--display); color: var(--muted); }
+.rr-bar { height: 10px; border-radius: 999px; background: rgba(233,240,236,.12); overflow: hidden; }
+.rr-bar span { display: block; height: 100%; background: var(--flag); border-radius: inherit; transform-origin: left; animation: grow .9s cubic-bezier(.2,.8,.2,1) both; }
+.round-rows li:nth-child(2) .rr-bar span { animation-delay: .08s; } .round-rows li:nth-child(3) .rr-bar span { animation-delay: .16s; }
+.round-rows li:nth-child(4) .rr-bar span { animation-delay: .24s; } .round-rows li:nth-child(5) .rr-bar span { animation-delay: .32s; }
+.rr-pts { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rr-km { grid-column: 2 / 4; font-size: 0.85rem; }
+
+/* Home */
+.me-strip { display: flex; gap: 0.75rem; flex-wrap: wrap; margin: 1.75rem 0 0; }
+.me-strip div { padding: 0.6rem 0.9rem; border-radius: var(--r-md); background: rgba(23, 58, 82, .7); border: 1px solid var(--line); }
+.me-strip dt { font-size: 0.8rem; color: var(--muted); }
+.me-strip dd { margin: 0.15rem 0 0; font: 800 1.35rem/1.1 var(--display); font-variant-numeric: tabular-nums; }
+.daily-leader { margin-top: 0.35rem !important; font-size: 0.88rem !important; color: var(--flag) !important; }
+.daily-leader strong { color: var(--text); }
+.big-score .count { font-size: inherit; color: inherit; margin: 0; letter-spacing: inherit; }
+.pano-veil.splashing .spinner { display: none; }
+.splash-load { display: block; width: 120px; height: 3px; margin: 1.1rem auto 0; border-radius: 3px; background: linear-gradient(90deg, transparent, var(--flag), transparent) 0 0 / 50% 100% no-repeat, rgba(233,240,236,.12); animation: splash-bar 1s linear infinite; }
+@keyframes splash-bar { from { background-position: -60px 0, 0 0; } to { background-position: 120px 0, 0 0; } }

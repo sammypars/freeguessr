@@ -4,7 +4,7 @@
 // works out which view to show from that state.
 import { api } from "./api.js";
 import { $, $$, esc, el, fmtScore, fmtDistance, fmtClock, toast, setBusy, copyText, friendlyError, openModal, closeModal } from "./ui.js";
-import { showPano, backToStart, resizeViewer, preloadViewer, destroyViewer } from "./viewer.js";
+import { showPano, backToStart, resizeViewer, preloadViewer, destroyViewer, onHeading } from "./viewer.js";
 import { createGuessMap, createResultMap, colorFor } from "./maps.js";
 import { nextLocation, prefetchLocation, SOURCES, getSourceSetting, setSourceSetting } from "./locations.js";
 
@@ -28,6 +28,10 @@ export function mountGame(root, gameId, { me, goHome }) {
             <div class="stat" id="hud-score-wrap"><span class="stat-k">Score</span><span class="stat-v" id="hud-score">0</span></div>
             <div class="stat stat-timer" id="hud-timer-wrap" hidden><span class="stat-k">Time</span><span class="stat-v" id="hud-timer">0:00</span></div>
           </div>
+          <div class="compass" id="compass" hidden title="Compass">
+            <div class="compass-rose" id="compass-rose"><span class="c-n">N</span><span class="c-e">E</span><span class="c-s">S</span><span class="c-w">W</span></div>
+            <span class="compass-tick" aria-hidden="true"></span>
+          </div>
         </div>
         <div class="hud-duel" id="hud-duel" hidden></div>
         <ol class="hud-players" id="hud-players" hidden></ol>
@@ -40,6 +44,9 @@ export function mountGame(root, gameId, { me, goHome }) {
 
       <section class="dock" id="dock" aria-label="Guess map">
         <div class="dock-map" id="guessmap"></div>
+        <button class="dock-pin" id="dock-pin" type="button" title="Keep the map big" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
         <div class="dock-bar">
           <button class="dock-close" id="dock-close" aria-label="Close map">Close</button>
           <button class="btn btn-flag dock-guess" id="guess" disabled>Place your pin on the map</button>
@@ -50,6 +57,7 @@ export function mountGame(root, gameId, { me, goHome }) {
         Map
       </button>
 
+      <div class="round-splash" id="splash" hidden aria-live="polite"></div>
       <div class="overlay" id="overlay" hidden></div>
     </div>`;
 
@@ -358,6 +366,7 @@ export function mountGame(root, gameId, { me, goHome }) {
     pin = null;
     guessBtn.disabled = true;
     guessBtn.textContent = "Place your pin on the map";
+    $("#compass", root).hidden = true;
     dock.classList.remove("open");
     ensureGuessMap();
     guessMap.clear();
@@ -366,12 +375,17 @@ export function mountGame(root, gameId, { me, goHome }) {
     // Show the veil only when coming from another screen; keep the old image
     // under it until the new one is ready so there's never a blank flash.
     veil.hidden = false;
-    $("#veil-text", root).textContent = `Round ${n}`;
+    $("#veil-text", root).textContent = "";
+    const splashShownAt = showSplash(n);
     try {
       await showPano($("#pano", root), round.image_id, { allowMove: game.move_mode === "move" });
+      // Keep the round card up long enough to read, then reveal the street.
+      const wait = 850 - (Date.now() - splashShownAt);
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     } catch (e) {
       if (destroyed || viewKey !== `play:${n}`) return;
       // Keep the message on screen (the guess map still works on top of it).
+      hideSplash();
       $(".spinner", veil)?.setAttribute("hidden", "");
       $("#veil-text", root).textContent = friendlyError(e);
       veil.classList.add("veil-error");
@@ -381,9 +395,32 @@ export function mountGame(root, gameId, { me, goHome }) {
     $(".spinner", veil)?.removeAttribute("hidden");
     veil.classList.remove("veil-error");
     veil.hidden = true;
+    hideSplash();
     resizeViewer();
     guessMap.invalidate();
     if (isHost() && game.mode !== "daily" && n < game.total_rounds) prefetchLocation();
+  }
+
+  function showSplash(n) {
+    const sp = $("#splash", root);
+    const total = game.mode === "duel" ? "" : `<span>/ ${game.total_rounds}</span>`;
+    const mult = game.mode === "duel" && Number(round?.multiplier) > 1 ? `×${Number(round.multiplier)} damage` : "";
+    const sub = mult || (game.time_limit ? `${fmtClock(game.time_limit)} on the clock` : game.move_mode === "nomove" ? "No moving" : "");
+    sp.innerHTML = `<p class="splash-k">Round</p><p class="splash-v">${n}${total}</p>${sub ? `<p class="splash-sub">${esc(sub)}</p>` : ""}<span class="splash-load" aria-hidden="true"></span>`;
+    sp.hidden = false;
+    veil.classList.add("splashing");
+    sp.classList.remove("out");
+    void sp.offsetWidth;
+    sp.classList.add("in");
+    return Date.now();
+  }
+  function hideSplash() {
+    const sp = $("#splash", root);
+    veil.classList.remove("splashing");
+    if (sp.hidden) return;
+    sp.classList.remove("in");
+    sp.classList.add("out");
+    setTimeout(() => { if (sp.classList.contains("out")) sp.hidden = true; }, 350);
   }
 
   function ensureGuessMap() {
@@ -392,7 +429,7 @@ export function mountGame(root, gameId, { me, goHome }) {
       pin = ll;
       if (!guessing) {
         guessBtn.disabled = false;
-        guessBtn.textContent = "Guess";
+        guessBtn.innerHTML = `Guess <kbd>Space</kbd>`;
       }
     });
     // Keep the map sized correctly as the dock grows and shrinks.
@@ -494,7 +531,8 @@ export function mountGame(root, gameId, { me, goHome }) {
         <div class="result-panel">
           <div class="result-score">
             <div>
-              <p class="big-score">${fmtScore(mine?.score)}<span> points</span></p>
+              <p class="verdict">${verdict(mine)}</p>
+              <p class="big-score"><span class="count" data-to="${mine?.score || 0}">0</span><span class="unit"> points</span></p>
               <p class="muted">${mine?.lat == null ? "You didn't guess in time." : `Your guess was <strong>${fmtDistance(mine.distance_km)}</strong> from the flag.`}</p>
               ${game.mode === "solo" || game.mode === "daily" ? `<p class="muted">Round ${n} of ${game.total_rounds} · ${fmtScore(meP()?.total_score)} points so far</p>` : ""}
             </div>
@@ -512,7 +550,8 @@ export function mountGame(root, gameId, { me, goHome }) {
     resultMap = createResultMap($("#result-map", overlay), [{
       answer: res.answer,
       guesses: res.guesses.map((g) => ({ ...g, colorIndex: colorIndex(g.user_id) })),
-    }]);
+    }], { animate: true });
+    countUp($(".count", overlay));
 
     const next = $("#next", overlay);
     if (next) {
@@ -591,10 +630,11 @@ export function mountGame(root, gameId, { me, goHome }) {
       sub = `out of ${fmtScore(maxScore)} possible across ${s.rounds.length} rounds.`;
     }
 
-    const roundRows = s.rounds.map((r) => {
-      const g = r.guesses.find((x) => x.user_id === me.id);
-      return `<tr><td>${r.round_no}</td><td>${fmtDistance(g?.distance_km)}</td><td>${fmtScore(g?.score)}</td></tr>`;
-    }).join("");
+    const myRounds = s.rounds.map((r) => ({ n: r.round_no, g: r.guesses.find((x) => x.user_id === me.id) }));
+    const roundRows = myRounds.map(({ n, g }) => `
+      <li><span class="rr-n">${n}</span>
+        <span class="rr-bar"><span style="width:${Math.round(((g?.score || 0) / 5000) * 100)}%"></span></span>
+        <span class="rr-pts">${fmtScore(g?.score)}</span><span class="rr-km muted">${fmtDistance(g?.distance_km)}</span></li>`).join("");
     const standings = game.mode === "party" || game.mode === "duel"
       ? `<h3>Standings</h3><ol class="final-standings">${s.players.map((p) => `<li class="${p.user_id === me.id ? "me" : ""}"><span class="dot" style="background:${colorFor(colorIndex(p.user_id))}"></span><span class="pname">${esc(p.username)}</span><span>${game.mode === "duel" ? `${fmtScore(p.health)} health` : `${fmtScore(p.total_score)} pts`}</span></li>`).join("")}</ol>`
       : "";
@@ -606,14 +646,24 @@ export function mountGame(root, gameId, { me, goHome }) {
           <div class="final-head"><h2>${headline}</h2><p class="muted">${sub}</p></div>
           ${standings}
           <h3>Your rounds</h3>
-          <table class="standings compact"><thead><tr><th>Round</th><th>Distance</th><th>Points</th></tr></thead><tbody>${roundRows}</tbody></table>
+          <ol class="round-rows">${roundRows}</ol>
           <div class="result-actions">
             <button class="btn btn-ghost" data-act="home">Home</button>
+            <button class="btn btn-ghost" id="share">Share</button>
             ${game.mode === "daily" ? `<a class="btn btn-flag" href="#/daily">See today's leaderboard</a>`
               : `<button class="btn btn-flag" id="again">${game.mode === "solo" ? "Play again" : "New room, same settings"}</button>`}
           </div>
         </div>
       </div>`, "overlay-full");
+
+    $("#share", overlay).onclick = () => {
+      const squares = myRounds.map(({ g }) => { const p = g?.score || 0; return p >= 4000 ? "🟩" : p >= 2000 ? "🟨" : p >= 500 ? "🟧" : "🟥"; }).join("");
+      const label = game.mode === "daily" ? `Daily ${game.daily_date}` : MODE_NAME[game.mode];
+      const line = game.mode === "duel" ? (game.winner_id === me.id ? "Won the duel ⚔️" : game.winner_id ? "Lost the duel" : "Duel draw")
+        : `${fmtScore(mine?.total_score)} / ${fmtScore(maxScore)}`;
+      const text = `FreeGuessr 🌍 ${label}\n${line}\n${squares}\n${location.origin}${location.pathname}`;
+      copyText(text).then(() => toast("Result copied — paste it anywhere"));
+    };
 
     resultMap = createResultMap($("#result-map", overlay), s.rounds.map((r) => ({
       answer: r.answer,
@@ -632,6 +682,26 @@ export function mountGame(root, gameId, { me, goHome }) {
         location.hash = `#/g/${id}`;
       } catch (e) { toast(friendlyError(e), "error"); setBusy(again, false); }
     };
+  }
+
+  function verdict(g) {
+    if (!g || g.lat == null) return "Out of time";
+    const p = g.score;
+    return p >= 5000 ? "Perfect!" : p >= 4800 ? "Spot on" : p >= 4000 ? "Brilliant" : p >= 2500 ? "Great guess"
+      : p >= 1000 ? "Not bad" : p >= 200 ? "Right part of the world" : "Way off";
+  }
+  function countUp(node) {
+    if (!node) return;
+    const to = Number(node.dataset.to) || 0;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches || to === 0) { node.textContent = fmtScore(to); return; }
+    const t0 = performance.now(), dur = 900;
+    const frame = (t) => {
+      if (!node.isConnected) return;
+      const k = Math.min(1, (t - t0) / dur);
+      node.textContent = fmtScore(to * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
   }
 
   // ---------- events ----------
@@ -656,6 +726,16 @@ export function mountGame(root, gameId, { me, goHome }) {
     if (act === "leave") leave();
   });
   $("#exit", root).onclick = leave;
+  const compass = $("#compass", root), rose = $("#compass-rose", root);
+  onHeading((h) => { compass.hidden = false; rose.style.transform = `rotate(${-h}deg)`; });
+  const pinBtn = $("#dock-pin", root);
+  pinBtn.onclick = () => {
+    const on = !dock.classList.contains("locked");
+    dock.classList.toggle("locked", on);
+    dock.classList.toggle("expanded", on);
+    pinBtn.setAttribute("aria-pressed", String(on));
+    pinBtn.title = on ? "Let the map shrink" : "Keep the map big";
+  };
   $("#back-start", root).onclick = backToStart;
   guessBtn.onclick = submitGuess;
   $("#map-fab", root).onclick = () => { dock.classList.add("open"); guessMap?.invalidate(); };
@@ -664,7 +744,7 @@ export function mountGame(root, gameId, { me, goHome }) {
   // Desktop: the map grows while hovered and shrinks after the pointer leaves.
   let shrinkTimer;
   dock.addEventListener("pointerenter", () => { clearTimeout(shrinkTimer); dock.classList.add("expanded"); });
-  dock.addEventListener("pointerleave", () => { shrinkTimer = setTimeout(() => dock.classList.remove("expanded"), 500); });
+  dock.addEventListener("pointerleave", () => { shrinkTimer = setTimeout(() => { if (!dock.classList.contains("locked")) dock.classList.remove("expanded"); }, 500); });
 
   const onKey = (e) => {
     if (e.target.closest("input, select, textarea") || document.querySelector(".modal")) return;

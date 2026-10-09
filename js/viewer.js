@@ -28,6 +28,7 @@ function ensureLayers(container) {
     <div class="pano-layer layer-flat" hidden><img alt="Street photo" draggable="false" /></div>
     <div class="pano-layer layer-p2d" hidden role="img" aria-label="360° street photo"></div>
     <div class="px-arrows" hidden><div class="px-ring"></div></div>
+    <div class="px-target" hidden></div>
     <p class="px-credit" hidden>Photo: <a href="https://panoramax.fr" target="_blank" rel="noopener">Panoramax</a> contributors, CC BY-SA</p>`;
   layers = {
     mly: container.querySelector(".layer-mly"),
@@ -35,6 +36,7 @@ function ensureLayers(container) {
     flat: container.querySelector(".layer-flat"),
     p2d: container.querySelector(".layer-p2d"),
     arrows: container.querySelector(".px-arrows"),
+    target: container.querySelector(".px-target"),
     credit: container.querySelector(".px-credit"),
   };
   layers.arrows.addEventListener("click", (e) => {
@@ -123,6 +125,7 @@ async function showMapillary(imageId, token) {
       trackResize: true,
     });
     setMlyMovement(allowMoveNow);
+    mly.on("bearing", (e) => { if (!layers.mly.hidden) emitHeading(e.bearing); });
     await new Promise((resolve, reject) => {
       const done = () => { mly.off("image", done); resolve(); };
       mly.on("image", done);
@@ -210,7 +213,7 @@ function inPlay() {
   return !screen || screen.dataset.view === "play";
 }
 
-async function showPanoramax(id, token, { heading = null } = {}) {
+async function showPanoramax(id, token, { heading = null, zoom = null } = {}) {
   const item = await pxItem(id);
   if (token !== renderToken) return;
   const sd = item.assets?.sd?.href;
@@ -236,7 +239,7 @@ async function showPanoramax(id, token, { heading = null } = {}) {
   } else if (next.pano) {
     show("psv");
     const pos = step
-      ? { position: { yaw: (heading - next.az) * RAD, pitch: psv.getPosition().pitch }, zoom: psv.getZoomLevel() }
+      ? { position: { yaw: (heading - next.az) * RAD, pitch: psv.getPosition().pitch }, zoom: zoom ?? psv.getZoomLevel() }
       : { position: { yaw: 0, pitch: 0 }, zoom: 20 };
     try {
       await psv.setPanorama(sd || hd, { transition: step ? STEP_FADE : false, showLoader: !step, ...pos });
@@ -266,7 +269,7 @@ async function showPanoramax(id, token, { heading = null } = {}) {
     resetFlatZoom(layers.flat);
     pxCurrent = next;
   }
-  pxMoves = [];
+  pxMoves = movesReady.get(id) || [];
   hovered = null;
   renderArrows();
   findMoves(token);
@@ -307,19 +310,48 @@ async function ensurePsv() {
       });
       // While hovering, show which way a click would take you.
       layers.psv.addEventListener("pointermove", (e) => {
-        if (e.buttons || !pxCurrent?.pano || !psv) return;
+        if (e.buttons || !pxCurrent?.pano || !psv) { hideTarget(); return; }
         const r = layers.psv.getBoundingClientRect();
-        const { yaw } = psv.dataHelper.viewerCoordsToSphericalCoords({ x: e.clientX - r.left, y: e.clientY - r.top });
-        hoverHeading(norm360(pxCurrent.az + yaw / RAD), layers.psv);
+        const { yaw, pitch } = psv.dataHelper.viewerCoordsToSphericalCoords({ x: e.clientX - r.left, y: e.clientY - r.top });
+        hoverHeading(norm360(pxCurrent.az + yaw / RAD), layers.psv, { x: e.clientX - r.left, y: e.clientY - r.top, down: -pitch });
       });
       layers.psv.addEventListener("pointerleave", () => hoverHeading(null, layers.psv));
   }
 }
 
-// Works out where you can walk from the current photo.
+// Where you can walk from a photo. Cached per photo, and worked out ahead of
+// time for the photos around you, so arrows appear the moment you arrive.
+const movesCache = new Map(); // id -> Promise<moves>
+const movesReady = new Map(); // id -> moves (once known)
+function stateOf(f) {
+  const [lng, lat] = f.geometry.coordinates;
+  return { id: f.id, item: f, lat, lng, az: azimuthOf(f), pano: is360(f) };
+}
+function computeMoves(cur) {
+  if (movesCache.has(cur.id)) return movesCache.get(cur.id);
+  if (movesCache.size > 400) { movesCache.clear(); movesReady.clear(); }
+  const p = movesFor(cur).then((moves) => { movesReady.set(cur.id, moves); return moves; })
+    .catch(() => { movesCache.delete(cur.id); return []; });
+  movesCache.set(cur.id, p);
+  return p;
+}
+
 async function findMoves(token) {
   const cur = pxCurrent;
   if (!cur || !allowMoveNow) return;
+  const moves = await computeMoves(cur);
+  if (token !== renderToken) return;
+  pxMoves = moves;
+  renderArrows();
+  // Load the closest photos now, and where you could go from them next.
+  for (const m of moves.slice(0, 4)) {
+    const url = m.f.assets.sd?.href || m.f.assets.hd?.href;
+    if (url) fetch(url, { mode: "cors" }).catch(() => {});
+  }
+  for (const m of moves.slice(0, 3)) computeMoves(stateOf(m.f));
+}
+
+async function movesFor(cur) {
   const seqIds = ["next", "prev"].map((r) => linkId(cur.item, r)).filter(Boolean);
   const [seq, near] = await Promise.all([
     Promise.all(seqIds.map((id) => pxItem(id).catch(() => null))),
@@ -328,7 +360,6 @@ async function findMoves(token) {
       .then((j) => j.features || [])
       .catch(() => []),
   ]);
-  if (token !== renderToken) return;
 
   const seen = new Set([cur.id]);
   const cands = [];
@@ -351,13 +382,7 @@ async function findMoves(token) {
     if (moves.length >= 6) break;
     if (moves.every((m) => angleDiff(m.bearing, c.bearing) >= 35)) moves.push(c);
   }
-  pxMoves = moves;
-  renderArrows();
-  // Load the closest few photos now so stepping is instant.
-  for (const m of moves.slice(0, 4)) {
-    const url = m.f.assets.sd?.href || m.f.assets.hd?.href;
-    if (url) fetch(url, { mode: "cors" }).catch(() => {});
-  }
+  return moves;
 }
 
 // Walk toward a compass heading (relative to where you face).
@@ -395,9 +420,19 @@ function clickWalk(heading, x, y) {
 }
 
 let hovered = null;
-function hoverHeading(heading, el) {
+// `point` (cursor position in the viewer and how far below the horizon it
+// is, in radians) places the ground marker that shows where a click goes.
+function hoverHeading(heading, el, point = null) {
   const m = heading === null || !allowMoveNow || moving ? null : pickMove(heading, CLICK_TOLERANCE);
   el.classList.toggle("can-walk", Boolean(m));
+  if (m && point && point.down > 0.03) {
+    const t = layers.target;
+    t.hidden = false;
+    const scale = Math.min(1.6, 0.55 + point.down * 1.4);
+    t.style.transform = `translate(${point.x}px, ${point.y}px) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
+  } else {
+    hideTarget();
+  }
   if ((m?.id || null) === hovered) return;
   hovered = m?.id || null;
   for (const b of layers.arrows.querySelectorAll(".px-arrow")) b.classList.toggle("target", b.dataset.id === hovered);
@@ -407,15 +442,43 @@ async function stepTo(id, { heading = viewHeading() } = {}) {
   if (!allowMoveNow || moving || !inPlay()) return;
   moving = true;
   layers.arrows.classList.add("busy");
+  hideTarget();
   const token = ++renderToken;
+  // A quick push forward into the photo when walking ahead, so a step feels
+  // like moving rather than a slideshow.
+  const m = pxMoves.find((x) => x.id === id);
+  const ahead = m && angleDiff(m.bearing, heading) < 60;
+  const usingPsv = psv && !use2d && !layers.psv.hidden;
+  const zoom = usingPsv ? psv.getZoomLevel() : null;
   try {
-    await showPanoramax(id, token, { heading });
+    if (ahead && usingPsv) {
+      await Promise.race([psv.animate({ zoom: Math.min(100, zoom + 14), speed: 180 }), sleepMs(260)]).catch(() => {});
+    } else if (ahead && !layers.p2d.hidden) {
+      layers.p2d.classList.add("lunge");
+    }
+    await showPanoramax(id, token, { heading, zoom });
   } catch {
-    /* keep the current photo */
+    if (usingPsv && zoom !== null) psv.zoom(zoom); // undo the push if the step failed
   } finally {
     moving = false;
+    layers.p2d.classList.remove("lunge");
     layers.arrows.classList.remove("busy");
   }
+}
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function hideTarget() {
+  if (layers?.target) layers.target.hidden = true;
+}
+
+// Compass: the game screen subscribes to the facing direction.
+let headingListener = null;
+let lastHeading = null;
+export function onHeading(cb) { headingListener = cb; if (lastHeading !== null) cb(lastHeading); }
+function emitHeading(h) {
+  if (h === null || h === undefined || Number.isNaN(h)) return;
+  lastHeading = h;
+  headingListener?.(h);
 }
 
 function scheduleArrows() {
@@ -426,6 +489,7 @@ function scheduleArrows() {
 function renderArrows() {
   if (!layers) return;
   const ring = layers.arrows;
+  if (pxCurrent && (layers.mly.hidden)) emitHeading(viewHeading());
   const photoShown = !layers.psv.hidden || !layers.flat.hidden || !layers.p2d.hidden;
   const showIt = Boolean(allowMoveNow && pxCurrent && pxMoves.length && photoShown);
   ring.hidden = !showIt;
@@ -504,7 +568,9 @@ function setup2d(el) {
       p2d.yaw = down.yaw - ((e.clientX - down.x) / pw) * 360;
       apply2d();
     } else {
-      hoverHeading(headingAt2d(el, e.clientX), el);
+      const r = el.getBoundingClientRect();
+      const down = ((e.clientY - r.top) / r.height - 0.5) * Math.PI / p2d.scale;
+      hoverHeading(headingAt2d(el, e.clientX), el, { x: e.clientX - r.left, y: e.clientY - r.top, down });
     }
   });
   const end = (e) => {

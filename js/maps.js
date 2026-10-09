@@ -33,9 +33,9 @@ function pinIcon(color, label = "") {
   });
 }
 
-function flagIcon() {
+function flagIcon(drop = false) {
   return L.divIcon({
-    className: "pin-icon",
+    className: drop ? "pin-icon flag-drop" : "pin-icon",
     html: `<svg viewBox="0 0 32 40" width="32" height="40" aria-hidden="true"><rect x="5" y="3" width="3" height="35" rx="1.5" fill="#10293B"/><path d="M8 4h19l-5 7 5 7H8z" fill="#E5533D" stroke="#10293B" stroke-width="2" stroke-linejoin="round"/></svg>`,
     iconSize: [32, 40],
     iconAnchor: [6, 38],
@@ -70,20 +70,40 @@ function nearLng(lng, refLng) {
 }
 
 // rounds: [{ answer: {lat,lng}, guesses: [{lat,lng,username,colorIndex}] , label }]
-export function createResultMap(el, rounds) {
+// animate: draw each line from the guess toward the flag, then drop the flag.
+export function createResultMap(el, rounds, { animate = false } = {}) {
   const map = baseMap(el, { worldCopyJump: false });
   const pts = [];
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const anim = animate && !reduce;
+  const lines = [];
   for (const r of rounds) {
     const a = [r.answer.lat, r.answer.lng];
-    L.marker(a, { icon: flagIcon(), keyboard: false, zIndexOffset: 1000 }).addTo(map);
+    const flag = L.marker(a, { icon: flagIcon(anim), keyboard: false, zIndexOffset: 1000 });
+    if (!anim) flag.addTo(map);
     pts.push(a);
     for (const g of r.guesses) {
       if (g.lat == null) continue;
       const p = [g.lat, nearLng(g.lng, r.answer.lng)];
       const color = colorFor(g.colorIndex ?? 0);
-      L.polyline([a, p], { color: "#10293B", weight: 3, opacity: 0.85, dashArray: "2 7", lineCap: "round" }).addTo(map);
+      const line = L.polyline(anim ? [p, p] : [a, p], { color: "#10293B", weight: 3, opacity: 0.85, dashArray: "2 7", lineCap: "round" }).addTo(map);
       L.marker(p, { icon: pinIcon(color, r.label ?? ""), keyboard: false, title: g.username }).addTo(map);
+      lines.push({ line, from: p, to: a });
       pts.push(p);
+    }
+    if (anim) {
+      // Draw the lines, then plant the flag.
+      const t0 = performance.now() + 250, dur = 800;
+      const frame = (t) => {
+        if (!map._container?.isConnected) return;
+        const k = Math.max(0, Math.min(1, (t - t0) / dur));
+        const e = 1 - Math.pow(1 - k, 3);
+        for (const l of lines) l.line.setLatLngs([l.from, [l.from[0] + (l.to[0] - l.from[0]) * e, l.from[1] + (l.to[1] - l.from[1]) * e]]);
+        if (k < 1) requestAnimationFrame(frame);
+        else flag.addTo(map);
+      };
+      if (lines.length) requestAnimationFrame(frame);
+      else setTimeout(() => { if (map._container?.isConnected) flag.addTo(map); }, 250);
     }
   }
   requestAnimationFrame(() => {
