@@ -192,6 +192,28 @@ form > .hint { margin-top: 0.3rem; }
 .pscore { font-variant-numeric: tabular-nums; font-weight: 700; }
 .board li:nth-child(-n+3) .rank { color: var(--flag); font-weight: 700; }
 
+/* ---------- check page ---------- */
+.check { max-width: 640px; margin: 0 auto; padding: clamp(24px, 6vh, 64px) 16px; }
+.check h1 { font-size: clamp(2.2rem, 5vw, 3.2rem); font-weight: 800; letter-spacing: -0.03em; }
+.check > .muted { margin: 0.5rem 0 1.5rem; }
+.check-list { list-style: none; margin: 0; padding: 0; border-top: 2px solid var(--text); }
+.ck { display: grid; grid-template-columns: 28px 1fr; gap: 0.75rem; padding: 0.85rem 0; border-bottom: 1px solid var(--line); }
+.ck-name { font-weight: 700; }
+.ck-detail { font-size: 0.92rem; margin-top: 0.15rem; }
+.ck-mark { width: 24px; height: 24px; border-radius: 50%; margin-top: 2px; display: grid; place-items: center; font-weight: 800; font-size: 0.9rem; }
+.ck.pending .ck-mark { border: 2.5px solid var(--muted); border-right-color: transparent; animation: spin .8s linear infinite; }
+.ck.ok .ck-mark { background: var(--good); color: var(--ink); }
+.ck.ok .ck-mark::after { content: "✓"; }
+.ck.bad .ck-mark { background: var(--pin); color: #fff; }
+.ck.bad .ck-mark::after { content: "✕"; }
+.ck.bad .ck-detail { color: #ffc2b6; }
+.ck-summary { margin-top: 1.25rem; padding: 1rem 1.1rem; border-radius: var(--r-md); }
+.ck-summary.good { background: rgba(95, 196, 140, 0.15); border: 1px solid rgba(95, 196, 140, 0.5); }
+.ck-summary.bad { background: rgba(229, 83, 61, 0.15); border: 1px solid rgba(229, 83, 61, 0.5); }
+.check-link { margin-top: 1.25rem; font-size: 0.92rem; }
+.check-link a { color: var(--muted); }
+.check-link a:hover { color: var(--flag); }
+
 /* =================================================================
    Game screen
    ================================================================= */
@@ -337,6 +359,11 @@ form > .hint { margin-top: 0.3rem; }
 /* Street viewer layers */
 .pano-layer { position: absolute; inset: 0; }
 .layer-psv .psv-loader-container { display: none; } /* the game's own loading veil covers this */
+.layer-p2d { background-color: #0a1a26; background-repeat: repeat-x; cursor: grab; touch-action: none; user-select: none; }
+.layer-p2d.dragging { cursor: grabbing; }
+.layer-p2d.can-walk:not(.dragging) { cursor: pointer; }
+.layer-p2d.fade-in { animation: p2dfade .35s ease-out; }
+@keyframes p2dfade { from { opacity: .35; } }
 .layer-flat { display: grid; place-items: center; overflow: hidden; background: #0a1a26; touch-action: none; }
 .layer-flat img { max-width: 100%; max-height: 100%; object-fit: contain; transform-origin: center; user-select: none; cursor: grab; }
 .px-arrows { position: absolute; z-index: 6; left: 50%; bottom: 30px; width: 300px; height: 300px; margin-left: -150px; perspective: 600px; pointer-events: none; }

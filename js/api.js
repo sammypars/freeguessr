@@ -1,5 +1,6 @@
 // Everything that talks to Supabase lives here.
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/+esm";
+// supabase-js is loaded from vendor/supabase.js (see index.html) as window.supabase.
+const createClient = (...args) => window.supabase.createClient(...args);
 import { CONFIG, isConfigured } from "./config.js";
 
 const sb = isConfigured()

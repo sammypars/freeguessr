@@ -8,8 +8,7 @@
 import { CONFIG } from "./config.js";
 
 const PX_ITEM = (id) => `https://api.panoramax.xyz/api/search?ids=${encodeURIComponent(id)}`;
-const PSV_CSS = "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5.15.1/index.css";
-const MLY_VERSION = "4.1.2";
+const PSV_CSS = "vendor/psv/core.css";
 
 let root = null;          // the #pano element the layers live in
 let layers = null;        // { mly, psv, flat, arrows, credit }
@@ -26,12 +25,14 @@ function ensureLayers(container) {
     <div class="pano-layer layer-mly" hidden></div>
     <div class="pano-layer layer-psv" hidden></div>
     <div class="pano-layer layer-flat" hidden><img alt="Street photo" draggable="false" /></div>
+    <div class="pano-layer layer-p2d" hidden role="img" aria-label="360° street photo"></div>
     <div class="px-arrows" hidden><div class="px-ring"></div></div>
     <p class="px-credit" hidden>Photo: <a href="https://panoramax.fr" target="_blank" rel="noopener">Panoramax</a> contributors, CC BY-SA</p>`;
   layers = {
     mly: container.querySelector(".layer-mly"),
     psv: container.querySelector(".layer-psv"),
     flat: container.querySelector(".layer-flat"),
+    p2d: container.querySelector(".layer-p2d"),
     arrows: container.querySelector(".px-arrows"),
     credit: container.querySelector(".px-credit"),
   };
@@ -40,11 +41,14 @@ function ensureLayers(container) {
     if (b) stepTo(b.dataset.id);
   });
   setupFlatZoom(layers.flat);
+  setup2d(layers.p2d);
+  window.addEventListener("keydown", onKeys);
+  window.addEventListener("resize", apply2d);
   return layers;
 }
 
 function show(which) {
-  for (const k of ["mly", "psv", "flat"]) layers[k].hidden = k !== which;
+  for (const k of ["mly", "psv", "flat", "p2d"]) layers[k].hidden = k !== which;
   const px = which !== "mly";
   layers.credit.hidden = !px;
   if (!px) layers.arrows.hidden = true;
@@ -60,13 +64,13 @@ function loadMapillary() {
   mlyLib = new Promise((resolve, reject) => {
     const css = document.createElement("link");
     css.rel = "stylesheet";
-    css.href = `https://unpkg.com/mapillary-js@${MLY_VERSION}/dist/mapillary.css`;
+    css.href = "vendor/mapillary/mapillary.css";
     document.head.appendChild(css);
     const s = document.createElement("script");
-    s.src = `https://unpkg.com/mapillary-js@${MLY_VERSION}/dist/mapillary.js`;
+    s.src = "vendor/mapillary/mapillary.js";
     s.async = true;
     s.onload = () => resolve(window.mapillary);
-    s.onerror = () => { mlyLib = null; reject(new Error("Couldn't load the street viewer.")); };
+    s.onerror = () => { mlyLib = null; reject(new Error("Couldn't load the street viewer. Reload the page; if it keeps happening, open the check page (#/check).")); };
     document.head.appendChild(s);
   });
   return mlyLib;
@@ -198,6 +202,7 @@ function bearingTo(lat1, lng1, lat2, lng2) {
 // Compass direction the player is facing, in degrees.
 function viewHeading() {
   if (!pxCurrent) return 0;
+  if (pxCurrent.pano && use2d) return norm360(pxCurrent.az + p2d.yaw);
   if (pxCurrent.pano && psv) return norm360(pxCurrent.az + psv.getPosition().yaw / RAD);
   return pxCurrent.az;
 }
@@ -217,11 +222,64 @@ async function showPanoramax(id, token, { heading = null } = {}) {
   const next = { id, item, lat, lng, az: azimuthOf(item), pano: is360(item) };
   const step = heading !== null;
 
-  if (next.pano) {
-    const { Viewer, EquirectangularAdapter } = await loadPsv();
+  if (next.pano && !use2d) {
+    try {
+      await ensurePsv();
+    } catch {
+      use2d = true; // no 3D graphics on this computer, or the 3D viewer was blocked
+    }
     if (token !== renderToken) return;
+  }
+
+  if (next.pano && use2d) {
+    await show2d(next, sd || hd, token, heading);
+    if (token !== renderToken) return;
+    pxCurrent = next;
+  } else if (next.pano) {
     show("psv");
-    if (!psv) {
+    const pos = step
+      ? { position: { yaw: (heading - next.az) * RAD, pitch: psv.getPosition().pitch }, zoom: psv.getZoomLevel() }
+      : { position: { yaw: 0, pitch: 0 }, zoom: 20 };
+    try {
+      await psv.setPanorama(sd || hd, { transition: step ? STEP_FADE : false, showLoader: !step, ...pos });
+    } catch {
+      // Either the photo is blocked, or 3D rendering failed. Tell them apart.
+      if (!(await loadsImage(sd || hd, 10000, true))) throw new Error(blockedMsg(sd || hd));
+      use2d = true;
+      return showPanoramax(id, token, { heading });
+    }
+    if (token !== renderToken) return;
+    pxCurrent = next;
+    // Sharpen in the background once the quick version is up. Download first
+    // and only swap if the player is still on this photo.
+    if (hd && sd && bigScreen()) {
+      loadsImage(hd, 30000, true).then((ok) => {
+        if (!ok || token !== renderToken || !psv || moving) return;
+        psv.setPanorama(hd, { transition: false, showLoader: false, position: psv.getPosition(), zoom: psv.getZoomLevel() }).catch(() => {});
+      });
+    }
+  } else {
+    const img = layers.flat.querySelector("img");
+    const src = (bigScreen() && hd) || sd || hd;
+    if (!(await loadsImage(src, 20000))) throw new Error(blockedMsg(src));
+    if (token !== renderToken) return;
+    show("flat");
+    img.src = src;
+    resetFlatZoom(layers.flat);
+    pxCurrent = next;
+  }
+  pxMoves = [];
+  hovered = null;
+  renderArrows();
+  findMoves(token);
+}
+
+async function ensurePsv() {
+  if (psv) return;
+  if (!webglOK) throw new Error("no webgl");
+  const { Viewer, EquirectangularAdapter } = await loadPsv();
+  if (!psv) {
+      show("psv"); // the viewer needs a visible container to size itself
       psv = new Viewer({
         container: layers.psv,
         // Ignore pose data embedded in some photos so every photo's centre is
@@ -257,39 +315,7 @@ async function showPanoramax(id, token, { heading = null } = {}) {
         hoverHeading(norm360(pxCurrent.az + yaw / RAD), layers.psv);
       });
       layers.psv.addEventListener("pointerleave", () => hoverHeading(null, layers.psv));
-    }
-    const pos = step
-      ? { position: { yaw: (heading - next.az) * RAD, pitch: psv.getPosition().pitch }, zoom: psv.getZoomLevel() }
-      : { position: { yaw: 0, pitch: 0 }, zoom: 20 };
-    try {
-      await psv.setPanorama(sd || hd, { transition: step && layers.psv.hidden === false ? STEP_FADE : false, showLoader: !step, ...pos });
-    } catch {
-      throw new Error("Couldn't load this Panoramax photo. Check your connection and try again.");
-    }
-    if (token !== renderToken) return;
-    pxCurrent = next;
-    // Sharpen in the background once the quick version is up. Download first
-    // and only swap if the player is still on this photo.
-    if (hd && sd && bigScreen()) {
-      loadsImage(hd, 30000, true).then((ok) => {
-        if (!ok || token !== renderToken || !psv || moving) return;
-        psv.setPanorama(hd, { transition: false, showLoader: false, position: psv.getPosition(), zoom: psv.getZoomLevel() }).catch(() => {});
-      });
-    }
-  } else {
-    const img = layers.flat.querySelector("img");
-    const src = (bigScreen() && hd) || sd || hd;
-    if (!(await loadsImage(src, 20000))) throw new Error("Couldn't load this Panoramax photo. Check your connection and try again.");
-    if (token !== renderToken) return;
-    show("flat");
-    img.src = src;
-    resetFlatZoom(layers.flat);
-    pxCurrent = next;
   }
-  pxMoves = [];
-  hovered = null;
-  renderArrows();
-  findMoves(token);
 }
 
 // Works out where you can walk from the current photo.
@@ -402,7 +428,7 @@ function scheduleArrows() {
 function renderArrows() {
   if (!layers) return;
   const ring = layers.arrows;
-  const photoShown = !layers.psv.hidden || !layers.flat.hidden;
+  const photoShown = !layers.psv.hidden || !layers.flat.hidden || !layers.p2d.hidden;
   const showIt = Boolean(allowMoveNow && pxCurrent && pxMoves.length && photoShown);
   ring.hidden = !showIt;
   if (!showIt) return;
@@ -422,6 +448,100 @@ function renderArrows() {
     b.style.transform = `translate(-50%, -50%) rotate(${rel}deg) translateY(-104px)`;
     b.classList.toggle("ahead", Math.abs(rel) < 35);
   }
+}
+
+// ---- No-3D fallback: the 360° photo as a wide picture you drag sideways.
+// Used when the computer has 3D graphics (WebGL) switched off or the 3D
+// viewer can't load. Arrows, click-to-walk and keys all still work.
+const webglOK = (() => {
+  try { const c = document.createElement("canvas"); return Boolean(c.getContext("webgl2") || c.getContext("webgl")); }
+  catch { return false; }
+})();
+let use2d = !webglOK;
+const p2d = { yaw: 0, scale: 1.5 };
+
+function apply2d() {
+  const el = layers?.p2d;
+  if (!el || el.hidden) return;
+  const W = el.clientWidth, H = el.clientHeight;
+  const ph = H * p2d.scale, pw = ph * 2; // equirectangular photos are 2:1
+  const x = W / 2 - (0.5 + p2d.yaw / 360) * pw;
+  el.style.backgroundSize = `${pw}px ${ph}px`;
+  el.style.backgroundPosition = `${x % pw}px center`;
+  scheduleArrows();
+}
+const headingAt2d = (el, clientX) => {
+  const r = el.getBoundingClientRect();
+  const pw = r.height * p2d.scale * 2;
+  return norm360(pxCurrent.az + p2d.yaw + ((clientX - r.left - r.width / 2) / pw) * 360);
+};
+
+async function show2d(next, url, token, heading) {
+  if (!(await loadsImage(url, 20000, true))) throw new Error(blockedMsg(url));
+  if (token !== renderToken) return;
+  const el = layers.p2d;
+  el.classList.remove("fade-in");
+  void el.offsetWidth;
+  el.classList.add("fade-in");
+  el.style.backgroundImage = `url("${url}")`;
+  p2d.yaw = heading === null ? 0 : heading - next.az;
+  if (heading === null) p2d.scale = 1.5;
+  show("p2d");
+  pxCurrent = next;
+  apply2d();
+}
+
+function setup2d(el) {
+  let down = null;
+  el.addEventListener("pointerdown", (e) => {
+    down = { x: e.clientX, y: e.clientY, yaw: p2d.yaw, moved: false };
+    el.setPointerCapture(e.pointerId);
+    el.classList.add("dragging");
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (!pxCurrent) return;
+    if (down) {
+      const pw = el.clientHeight * p2d.scale * 2;
+      if (Math.abs(e.clientX - down.x) > 4) down.moved = true;
+      p2d.yaw = down.yaw - ((e.clientX - down.x) / pw) * 360;
+      apply2d();
+    } else {
+      hoverHeading(headingAt2d(el, e.clientX), el);
+    }
+  });
+  const end = (e) => {
+    el.classList.remove("dragging");
+    const d = down;
+    down = null;
+    if (d && !d.moved && e.type === "pointerup" && pxCurrent) clickWalk(headingAt2d(el, e.clientX), e.clientX, e.clientY);
+  };
+  el.addEventListener("pointerup", end);
+  el.addEventListener("pointercancel", end);
+  el.addEventListener("pointerleave", () => { if (!down) hoverHeading(null, el); });
+  el.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    p2d.scale = Math.min(3.2, Math.max(1, p2d.scale * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
+    apply2d();
+  }, { passive: false });
+}
+
+// Keyboard for the views that aren't driven by the 3D viewer.
+function onKeys(e) {
+  if (!layers || (layers.p2d.hidden && layers.flat.hidden) || !inPlay() || !allowMoveNow) return;
+  if (e.target.closest?.("input, select, textarea") || document.querySelector(".modal")) return;
+  const k = e.key;
+  if (k === "w" || k === "W" || k === "ArrowUp") walk(0);
+  else if (k === "s" || k === "S" || k === "ArrowDown") walk(180);
+  else if (!layers.p2d.hidden && (k === "a" || k === "A" || k === "ArrowLeft")) { p2d.yaw -= 12; apply2d(); }
+  else if (!layers.p2d.hidden && (k === "d" || k === "D" || k === "ArrowRight")) { p2d.yaw += 12; apply2d(); }
+  else return;
+  e.preventDefault();
+}
+
+function blockedMsg(url) {
+  let host = "the photo server";
+  try { host = new URL(url).host; } catch { /* keep default */ }
+  return `This photo couldn't load. Photos from ${host} may be blocked on this computer. Open ${location.origin}${location.pathname}#/check to see what's blocked.`;
 }
 
 // Flat (non-360) photos: wheel zoom, drag to pan, double-click to zoom.
@@ -499,9 +619,12 @@ export function backToStart() {
 export function resizeViewer() {
   try { mly?.resize(); } catch { /* ignore */ }
   try { psv?.autoSize(); } catch { /* ignore */ }
+  apply2d();
 }
 
 export function destroyViewer() {
+  window.removeEventListener("keydown", onKeys);
+  window.removeEventListener("resize", apply2d);
   try { mly?.remove(); } catch { /* ignore */ }
   try { psv?.destroy(); } catch { /* ignore */ }
   mly = null;

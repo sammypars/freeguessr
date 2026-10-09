@@ -49,6 +49,7 @@ Any static server works, e.g. `python3 -m http.server 8000` in this folder, then
 - **Street photos setting** (solo setup and the room lobby): *Automatic* uses Mapillary when your browser can load its photos and Panoramax when it can't. Mapillary's photos come from Facebook's servers, which many school and office networks block; Panoramax loads there. In a room, the host's setting decides, so on a school network pick **Panoramax** so everyone's photos load.
 - Panoramax coverage is thinner than Mapillary's and strongest in France and the rest of Europe, so Panoramax games lean European. The daily challenge always uses Panoramax so it works on every network.
 - Both sources are crowd-sourced. The location picker favours 360° photos and falls back to flat photos if it can't find one quickly.
+- **Playing on a school or work laptop?** Open `https://sammypars.github.io/freeguessr/#/check`. It tests everything the game needs and says what's blocked. The game's code libraries are hosted with the site (in `vendor/`) so filters that block code CDNs can't break it, and if a laptop has 3D graphics (WebGL) switched off, 360° photos show as a wide picture you drag sideways instead.
 - Supabase pauses free projects after a week with no activity; open the dashboard and click **Restore** if the game stops loading after a long break.
 
 ## Files

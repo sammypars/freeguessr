@@ -182,6 +182,7 @@ async function renderHome() {
             </div>
           </form>
           <div id="active-games"></div>
+          <p class="check-link"><a href="#/check">Street view not loading? Run a connection check</a></p>
         </div>
       </div>
     </section>`;
@@ -367,6 +368,112 @@ function renderSetup() {
     </section>`;
 }
 
+
+// ---------------------------------------------------------------- check page
+// Tests every outside service the game uses, so a player on a filtered
+// network can see exactly what's blocked.
+async function renderCheck() {
+  document.body.className = "page-check";
+  const CHECKS = [
+    { id: "browser", name: "Browser is new enough", fix: "Update Chrome, Edge, Safari or Firefox." },
+    { id: "libs", name: "Game code loaded", fix: "Reload the page. If it still fails, this site's files are being blocked." },
+    { id: "server", name: "Game server (Supabase)", fix: "supabase.co is blocked, so logins and rooms can't work on this network." },
+    { id: "tiles", name: "Guess map (OpenStreetMap)", fix: "tile.openstreetmap.org is blocked, so the guess map will be blank." },
+    { id: "webgl", name: "3D graphics (WebGL)", fix: "Not available, so 360° photos show as a flat strip you drag sideways. Everything else still works." },
+    { id: "pxapi", name: "Panoramax search", fix: "api.panoramax.xyz is blocked, so Panoramax rounds can't start." },
+    { id: "pxphotos", name: "Panoramax photos", fix: "Panoramax's photo servers are blocked, so Panoramax street views won't show." },
+    { id: "mly", name: "Mapillary photos", fix: "Blocked (common on school networks). Set Street photos to Panoramax." },
+  ];
+  app.innerHTML = `
+    <section class="check">
+      <h1>Connection check</h1>
+      <p class="muted">Tests everything FreeGuessr needs from this computer and network.</p>
+      <ul class="check-list">${CHECKS.map((c) => `
+        <li id="ck-${c.id}" class="ck pending"><span class="ck-mark" aria-hidden="true"></span>
+          <div><p class="ck-name">${c.name}</p><p class="ck-detail muted">Checking…</p></div></li>`).join("")}
+      </ul>
+      <div id="ck-summary" class="ck-summary" hidden></div>
+      <div class="row-actions"><a class="btn btn-ghost" href="./">Back to home</a><button class="btn btn-ghost" id="ck-copy" hidden>Copy results</button></div>
+    </section>`;
+
+  const withTimeout = (p, ms = 7000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("timed out")), ms))]);
+  const img = (url, ms = 7000) => new Promise((resolve) => {
+    const i = new Image(); const t = setTimeout(() => resolve(false), ms);
+    i.onload = () => { clearTimeout(t); resolve(true); }; i.onerror = () => { clearTimeout(t); resolve(false); };
+    i.src = url;
+  });
+  const results = {};
+  const set = (id, ok, detail) => {
+    results[id] = { ok, detail };
+    const li = $(`#ck-${id}`, app);
+    if (!li) return;
+    li.className = `ck ${ok ? "ok" : "bad"}`;
+    $(".ck-detail", li).textContent = ok ? (detail || "Working") : (detail || CHECKS.find((c) => c.id === id).fix);
+  };
+
+  const tests = {
+    browser: async () => (HTMLScriptElement.supports?.("importmap") ? [true] : [false]),
+    libs: async () => (window.L && window.supabase ? [true] : [false]),
+    server: async () => {
+      const r = await withTimeout(fetch(`${CONFIG.SUPABASE_URL}/auth/v1/settings`, { headers: { apikey: CONFIG.SUPABASE_ANON_KEY } }));
+      return [r.ok];
+    },
+    tiles: async () => [await img(`https://tile.openstreetmap.org/2/1/1.png`)],
+    webgl: async () => {
+      let ok = false;
+      try { const c = document.createElement("canvas"); ok = Boolean(c.getContext("webgl2") || c.getContext("webgl")); } catch { /* no */ }
+      if (ok) { try { await withTimeout(import("@photo-sphere-viewer/core")); } catch { return [false, "3D graphics work, but the 360° viewer code didn't load. 360° photos will show as a flat strip."]; } }
+      return [ok];
+    },
+    pxapi: async () => {
+      const r = await withTimeout(fetch("https://api.panoramax.xyz/api/search?limit=10&bbox=2.33,48.85,2.36,48.87&filter=field_of_view%3D360"));
+      if (!r.ok) return [false];
+      results._pxFeatures = (await r.json()).features || [];
+      return [true];
+    },
+    pxphotos: async () => {
+      let feats = results._pxFeatures;
+      if (!feats) { try { feats = (await (await withTimeout(fetch("https://api.panoramax.xyz/api/search?limit=10&bbox=2.33,48.85,2.36,48.87"))).json()).features; } catch { return [false, "Couldn't test: Panoramax search is blocked."]; } }
+      const urls = [...new Map(feats.map((f) => f.assets?.thumb?.href || f.assets?.sd?.href).filter(Boolean).map((u) => [new URL(u).host, u])).values()];
+      if (!urls.length) {
+        try {
+          const more = (await (await withTimeout(fetch("https://api.panoramax.xyz/api/search?limit=10&bbox=-0.15,51.49,-0.1,51.52"))).json()).features || [];
+          more.forEach((f) => { const u = f.assets?.thumb?.href || f.assets?.sd?.href; if (u) urls.push(u); });
+        } catch { /* fall through */ }
+      }
+      if (!urls.length) return [false, "Couldn't find a photo to test."];
+      const ok = await Promise.all(urls.map((u) => img(u)));
+      const blocked = urls.filter((_, i) => !ok[i]).map((u) => new URL(u).host);
+      return blocked.length ? [false, `Blocked: ${blocked.join(", ")}. Panoramax street views won't show.`] : [true];
+    },
+    mly: async () => [await withTimeout(mapillaryReachable(), 9000).catch(() => false)],
+  };
+  // pxphotos uses pxapi's result, so run that pair in order; everything else in parallel.
+  await Promise.all(Object.entries(tests).filter(([k]) => k !== "pxphotos").map(async ([id, fn]) => {
+    try { const [ok, detail] = await fn(); set(id, ok, detail); } catch { set(id, false); }
+    if (id === "pxapi") { try { const [ok, detail] = await tests.pxphotos(); set("pxphotos", ok, detail); } catch { set("pxphotos", false); } }
+  }));
+
+  const r = (k) => results[k]?.ok;
+  const canPlay = r("browser") && r("libs") && r("server") && r("pxapi") && r("pxphotos");
+  const summary = $("#ck-summary", app);
+  summary.hidden = false;
+  summary.className = `ck-summary ${canPlay || (r("libs") && r("server") && r("mly")) ? "good" : "bad"}`;
+  summary.innerHTML = !r("libs") || !r("server")
+    ? "<strong>FreeGuessr can't run here.</strong> The game's own files or its server are blocked on this computer or network."
+    : r("mly")
+      ? "<strong>You're good to go.</strong> Everything the game needs loads here."
+      : canPlay
+        ? "<strong>You can play.</strong> Mapillary is blocked here, so use <em>Street photos: Panoramax</em> (Automatic picks it for you)."
+        : "<strong>Street views can't load here.</strong> Neither photo source gets through this network's filter. Try another Wi-Fi or a phone hotspot.";
+  const copy = $("#ck-copy", app);
+  copy.hidden = false;
+  copy.onclick = () => {
+    const text = CHECKS.map((c) => `${results[c.id]?.ok ? "OK  " : "FAIL"} ${c.name}${results[c.id]?.ok ? "" : ` — ${results[c.id]?.detail || c.fix}`}`).join("\n") + `\n${navigator.userAgent}`;
+    navigator.clipboard?.writeText(text).then(() => toast("Results copied"), () => toast("Couldn't copy", "error"));
+  };
+}
+
 // ---------------------------------------------------------------- router
 async function route() {
   teardown?.();
@@ -379,6 +486,7 @@ async function route() {
     if (section === "g" && arg) return await renderGame(arg);
     if (section === "join" && arg) return await renderJoin(arg.toUpperCase());
     if (section === "daily") return await renderDaily();
+    if (section === "check") return await renderCheck();
     return await renderHome();
   } catch (e) {
     toast(friendlyError(e), "error");
@@ -386,6 +494,8 @@ async function route() {
 }
 
 async function init() {
+  // The check page must work even when the rest of the game can't start.
+  if (location.hash.startsWith("#/check")) return renderCheck();
   if (!isConfigured()) return renderSetup();
   ({ api, USERNAME_RE } = await import("./api.js"));
   session = await api.session();
@@ -403,5 +513,5 @@ async function init() {
 }
 
 init().catch((e) => {
-  app.innerHTML = `<section class="center-page"><div class="card card-narrow"><h2>FreeGuessr couldn't start</h2><p class="muted">${esc(friendlyError(e))}</p><button class="btn btn-flag" onclick="location.reload()">Reload</button></div></section>`;
+  app.innerHTML = `<section class="center-page"><div class="card card-narrow"><h2>FreeGuessr couldn't start</h2><p class="muted">${esc(friendlyError(e))}</p><div class="row-actions"><a class="btn btn-ghost" href="#/check" onclick="setTimeout(() => location.reload(), 0)">Run a connection check</a><button class="btn btn-flag" onclick="location.reload()">Reload</button></div></div></section>`;
 });
